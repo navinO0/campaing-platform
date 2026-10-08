@@ -8,8 +8,8 @@ const envSchema = z.object({
 
   // n8n connection (Server-side ONLY)
   N8N_BASE_URL: z.string().url().default("https://n8n-ktxhkuiuzp3gnwgrggc15ekz.navin.lol"),
-  N8N_API_KEY: z.string().optional().default(""),
-  N8N_WEBHOOK_SECRET: z.string().optional().default(""),
+  N8N_API_KEY: z.string().default("n8n_api_a3f5c2a2a7b418388e287f894afc59ae51e95bd985613a3d"),
+  N8N_WEBHOOK_SECRET: z.string().default("whsec_whatsapp_campaign_2026_supersecret_key"),
 
   // n8n webhook paths
   N8N_CONTACTS_WEBHOOK: z.string().default("/webhook/whatsapp-campaign/contacts"),
@@ -32,6 +32,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string().default(
     "postgres://postgres:8r7OI5gyHV7RSXNTYOl5MUCrDfcCOOrdD92Ytz6IXDrHRCOgzYXwv24H2qGsOUix@100.121.9.105:6574/postgres?sslmode=require"
   ),
+
+  // Evolution API Metadata (Orchestrated through n8n - Server-side reference)
+  EVOLUTION_API_URL: z.string().default("https://evo-sgwly6o49pvn1dvcdxwemtrc.navin.lol"),
+  EVOLUTION_INSTANCE_NAME: z.string().default("Naveen kumar kambham"),
+  EVOLUTION_API_KEY: z.string().default("4A917FA35F1C-4E65-AF79-2DEAE24C9CE3"),
 
   // Authentication & Security
   AUTH_SECRET: z.string().optional().default(""),
