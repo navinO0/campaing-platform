@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { bulkOptOutCustomersInDb } from "@/lib/db";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 
@@ -17,21 +17,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const customers = db.getCustomers();
-    let optedOutCount = 0;
-
-    customers.forEach((c) => {
-      if (customerIds.includes(c.id)) {
-        c.optedIn = false;
-        c.optedOut = true;
-        c.optedOutAt = new Date().toISOString();
-        c.optOutReason = reason || "Bulk Admin Suppression";
-        c.updatedAt = new Date().toISOString();
-        optedOutCount++;
-      }
-    });
-
-    db.setCustomers(customers);
+    const optedOutCount = await bulkOptOutCustomersInDb(
+      customerIds,
+      reason || "Bulk Admin Suppression"
+    );
 
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
       method: "POST",

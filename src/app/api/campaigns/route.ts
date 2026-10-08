@@ -1,15 +1,30 @@
 import { NextResponse } from "next/server";
-import { db, initialTemplates } from "@/lib/data/store";
+import { getCampaignsFromDb, createCampaignInDb, getTemplateByIdFromDb } from "@/lib/db";
 import { campaignSchema } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Campaign } from "@/types";
 
 export async function GET() {
-  return NextResponse.json({
-    success: true,
-    data: db.getCampaigns(),
-  });
+  try {
+    const campaigns = await getCampaignsFromDb();
+    return NextResponse.json({
+      success: true,
+      data: campaigns,
+    });
+  } catch (err: unknown) {
+    console.error("Error retrieving campaigns:", err);
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "DATABASE_ERROR",
+          message: (err as Error).message,
+        },
+      },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -17,10 +32,9 @@ export async function POST(request: Request) {
     const json = await request.json();
     const validated = campaignSchema.parse(json);
 
-    const templates = db.getTemplates();
-    const template = templates.find((t) => t.id === validated.templateId) || initialTemplates[0];
+    const template = await getTemplateByIdFromDb(validated.templateId);
 
-    const newCampaign: Campaign = {
+    const newCampaignData: Campaign = {
       id: `cmp_${Date.now()}`,
       name: validated.name,
       description: validated.description,
@@ -38,8 +52,8 @@ export async function POST(request: Request) {
       schedule: validated.schedule,
       throttling: validated.throttling,
       stats: {
-        totalAudience: 5000,
-        queued: 5000,
+        totalAudience: 0,
+        queued: 0,
         sent: 0,
         delivered: 0,
         read: 0,
@@ -51,38 +65,39 @@ export async function POST(request: Request) {
       startedAt: validated.schedule.type === "immediate" ? new Date().toISOString() : null,
     };
 
+    // Inserts campaign and creates individual campaign_jobs with idempotency keys
+    const createdCampaign = await createCampaignInDb(newCampaignData);
+
+    // Notify n8n start webhook asynchronously if immediate
     if (validated.schedule.type === "immediate") {
       forwardToN8n(env.N8N_CAMPAIGN_START_WEBHOOK, {
         method: "POST",
         body: {
-          campaignId: newCampaign.id,
-          name: newCampaign.name,
-          templateId: newCampaign.templateId,
-          audience: newCampaign.audience,
-          variables: newCampaign.variables,
-          media: newCampaign.media,
-          throttling: newCampaign.throttling,
+          campaignId: createdCampaign.id,
+          name: createdCampaign.name,
+          templateId: createdCampaign.templateId,
+          audience: createdCampaign.audience,
+          variables: createdCampaign.variables,
+          media: createdCampaign.media,
+          throttling: createdCampaign.throttling,
         },
       }).catch((err) => {
         console.error("Non-blocking n8n webhook notification:", err);
       });
     }
 
-    const campaigns = db.getCampaigns();
-    campaigns.unshift(newCampaign);
-    db.setCampaigns(campaigns);
-
     return NextResponse.json({
       success: true,
-      data: newCampaign,
-      message: "Campaign created and queued for execution",
+      data: createdCampaign,
+      message: "Campaign created and pending jobs queued in PostgreSQL database",
     });
   } catch (err: unknown) {
+    console.error("Error creating campaign:", err);
     return NextResponse.json(
       {
         success: false,
         error: {
-          code: "VALIDATION_ERROR",
+          code: "VALIDATION_OR_DB_ERROR",
           message: (err as Error).message,
         },
       },

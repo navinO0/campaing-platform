@@ -1,26 +1,31 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { getCustomerByIdFromDb, updateCustomerInDb, deleteCustomerFromDb } from "@/lib/db";
 import { customerSchema, normalizePhoneNumber } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
-import type { Customer } from "@/types";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const customers = db.getCustomers();
-  const customer = customers.find((c) => c.id === id);
+  try {
+    const { id } = await params;
+    const customer = await getCustomerByIdFromDb(id);
 
-  if (!customer) {
+    if (!customer) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: customer });
+  } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
-      { status: 404 }
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ success: true, data: customer });
 }
 
 export async function PUT(
@@ -33,44 +38,25 @@ export async function PUT(
     const validated = customerSchema.parse(json);
     const { normalized } = normalizePhoneNumber(validated.phone);
 
-    const customers = db.getCustomers();
-    const index = customers.findIndex((c) => c.id === id);
-
-    if (index === -1) {
-      return NextResponse.json(
-        { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
-        { status: 404 }
-      );
-    }
-
-    // Check duplicate phone if changed
-    const duplicate = customers.find((c) => c.phone === normalized && c.id !== id);
-    if (duplicate) {
-      return NextResponse.json(
-        { success: false, error: { code: "DUPLICATE_PHONE", message: "Another customer has this phone" } },
-        { status: 409 }
-      );
-    }
-
-    const updatedCustomer: Customer = {
-      ...customers[index],
+    const updatedCustomer = await updateCustomerInDb(id, {
       name: validated.name,
       phone: normalized,
       email: validated.email || undefined,
       countryCode: validated.countryCode || "91",
       tags: validated.tags || [],
-      segment: validated.segment || customers[index].segment,
+      segment: validated.segment,
       optedIn: validated.optedIn ?? true,
       optedOut: validated.optedOut ?? false,
-      optedOutAt: validated.optedOut
-        ? customers[index].optedOutAt || new Date().toISOString()
-        : null,
+      optedOutAt: validated.optedOut ? new Date().toISOString() : null,
       optOutReason: validated.optOutReason || null,
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
-    customers[index] = updatedCustomer;
-    db.setCustomers(customers);
+    if (!updatedCustomer) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
+        { status: 404 }
+      );
+    }
 
     // Notify n8n contacts webhook
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
@@ -85,7 +71,7 @@ export async function PUT(
     });
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "VALIDATION_ERROR", message: (err as Error).message } },
+      { success: false, error: { code: "VALIDATION_OR_DB_ERROR", message: (err as Error).message } },
       { status: 400 }
     );
   }
@@ -95,28 +81,30 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const customers = db.getCustomers();
-  const index = customers.findIndex((c) => c.id === id);
+  try {
+    const { id } = await params;
+    const deleted = await deleteCustomerFromDb(id);
 
-  if (index === -1) {
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
+        { status: 404 }
+      );
+    }
+
+    forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
+      method: "POST",
+      body: { action: "delete", customerId: id },
+    }).catch(() => null);
+
+    return NextResponse.json({
+      success: true,
+      message: "Customer deleted successfully",
+    });
+  } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "NOT_FOUND", message: "Customer not found" } },
-      { status: 404 }
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
     );
   }
-
-  const deleted = customers.splice(index, 1)[0];
-  db.setCustomers(customers);
-
-  forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
-    method: "POST",
-    body: { action: "delete", customerId: id },
-  }).catch(() => null);
-
-  return NextResponse.json({
-    success: true,
-    data: deleted,
-    message: "Customer deleted successfully",
-  });
 }

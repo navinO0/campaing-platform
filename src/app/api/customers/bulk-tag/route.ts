@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { bulkTagCustomersInDb } from "@/lib/db";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 
@@ -17,20 +17,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const customers = db.getCustomers();
-    let updatedCount = 0;
-
-    customers.forEach((c) => {
-      if (customerIds.includes(c.id)) {
-        if (!c.tags.includes(tag)) {
-          c.tags.push(tag);
-          c.updatedAt = new Date().toISOString();
-          updatedCount++;
-        }
-      }
-    });
-
-    db.setCustomers(customers);
+    const updatedCount = await bulkTagCustomersInDb(customerIds, [tag]);
 
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
       method: "POST",

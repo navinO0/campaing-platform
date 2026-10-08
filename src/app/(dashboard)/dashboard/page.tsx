@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { DashboardMetrics } from "@/components/dashboard/dashboard-metrics";
 import { RecentCampaignsTable } from "@/components/dashboard/recent-campaigns-table";
 import { initialStats } from "@/lib/data/store";
-import { useCampaigns } from "@/hooks/use-dashboard-data";
+import { useCampaigns, useDashboardStats } from "@/hooks/use-dashboard-data";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import Link from "next/link";
@@ -12,6 +12,7 @@ import { PlusCircle, RefreshCw, AlertCircle, ShieldAlert } from "lucide-react";
 
 export default function DashboardPage() {
   const { campaigns, isLoading, isError, error, startCampaign, stopCampaign } = useCampaigns();
+  const { data: statsData } = useDashboardStats();
   const [stopConfirmId, setStopConfirmId] = useState<string | null>(null);
 
   const handleStopConfirmed = async () => {
@@ -43,7 +44,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Main Metrics Cards */}
-      <DashboardMetrics stats={initialStats} />
+      <DashboardMetrics stats={statsData || initialStats} />
 
       {/* Recent Campaigns Section */}
       <div className="space-y-4">

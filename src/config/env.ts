@@ -28,6 +28,11 @@ const envSchema = z.object({
   N8N_MAX_RETRIES: z.coerce.number().default(2),
   CAMPAIGN_STATUS_POLL_INTERVAL_MS: z.coerce.number().default(5000),
 
+  // Database connection (PostgreSQL for Job Queue and Persistent Storage)
+  DATABASE_URL: z.string().default(
+    "postgres://postgres:8r7OI5gyHV7RSXNTYOl5MUCrDfcCOOrdD92Ytz6IXDrHRCOgzYXwv24H2qGsOUix@100.121.9.105:6574/postgres?sslmode=require"
+  ),
+
   // Authentication & Security
   AUTH_SECRET: z.string().optional().default(""),
 });

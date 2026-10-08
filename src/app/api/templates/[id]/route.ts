@@ -1,26 +1,31 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { getTemplateByIdFromDb, updateTemplateInDb, deleteTemplateFromDb } from "@/lib/db";
 import { templateSchema, extractTemplateVariables } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
-import type { Template } from "@/types";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const templates = db.getTemplates();
-  const template = templates.find((t) => t.id === id);
+  try {
+    const { id } = await params;
+    const template = await getTemplateByIdFromDb(id);
 
-  if (!template) {
+    if (!template) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: template });
+  } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
-      { status: 404 }
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ success: true, data: template });
 }
 
 export async function PUT(
@@ -31,21 +36,9 @@ export async function PUT(
     const { id } = await params;
     const json = await request.json();
     const validated = templateSchema.parse(json);
-
-    const templates = db.getTemplates();
-    const index = templates.findIndex((t) => t.id === id);
-
-    if (index === -1) {
-      return NextResponse.json(
-        { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
-        { status: 404 }
-      );
-    }
-
     const variables = extractTemplateVariables(validated.bodyText);
 
-    const updatedTemplate: Template = {
-      ...templates[index],
+    const updated = await updateTemplateInDb(id, {
       name: validated.name,
       language: validated.language,
       category: validated.category,
@@ -54,25 +47,28 @@ export async function PUT(
       mediaType: validated.mediaType,
       mediaUrl: validated.mediaUrl || undefined,
       buttons: validated.buttons || [],
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
-    templates[index] = updatedTemplate;
-    db.setTemplates(templates);
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
+        { status: 404 }
+      );
+    }
 
     forwardToN8n(env.N8N_TEMPLATES_WEBHOOK, {
       method: "POST",
-      body: { action: "update", template: updatedTemplate },
+      body: { action: "update", template: updated },
     }).catch(() => null);
 
     return NextResponse.json({
       success: true,
-      data: updatedTemplate,
+      data: updated,
       message: "Template updated successfully",
     });
   } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "VALIDATION_ERROR", message: (err as Error).message } },
+      { success: false, error: { code: "VALIDATION_OR_DB_ERROR", message: (err as Error).message } },
       { status: 400 }
     );
   }
@@ -82,28 +78,30 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const templates = db.getTemplates();
-  const index = templates.findIndex((t) => t.id === id);
+  try {
+    const { id } = await params;
+    const deleted = await deleteTemplateFromDb(id);
 
-  if (index === -1) {
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
+        { status: 404 }
+      );
+    }
+
+    forwardToN8n(env.N8N_TEMPLATES_WEBHOOK, {
+      method: "POST",
+      body: { action: "delete", templateId: id },
+    }).catch(() => null);
+
+    return NextResponse.json({
+      success: true,
+      message: "Template deleted successfully",
+    });
+  } catch (err: unknown) {
     return NextResponse.json(
-      { success: false, error: { code: "NOT_FOUND", message: "Template not found" } },
-      { status: 404 }
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
     );
   }
-
-  const deleted = templates.splice(index, 1)[0];
-  db.setTemplates(templates);
-
-  forwardToN8n(env.N8N_TEMPLATES_WEBHOOK, {
-    method: "POST",
-    body: { action: "delete", templateId: id },
-  }).catch(() => null);
-
-  return NextResponse.json({
-    success: true,
-    data: deleted,
-    message: "Template deleted successfully",
-  });
 }

@@ -1,56 +1,46 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { getCustomersFromDb, createCustomerInDb } from "@/lib/db";
 import { customerSchema, normalizePhoneNumber } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Customer } from "@/types";
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const search = searchParams.get("search")?.toLowerCase();
-  const segment = searchParams.get("segment");
-  const optIn = searchParams.get("optedIn");
-  const optOut = searchParams.get("optedOut");
-  const country = searchParams.get("country");
-  const tag = searchParams.get("tag");
+  try {
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search") || undefined;
+    const segment = searchParams.get("segment") || undefined;
+    const optIn = searchParams.get("optedIn");
+    const optOut = searchParams.get("optedOut");
+    const tag = searchParams.get("tag") || undefined;
 
-  let filtered = [...db.getCustomers()];
+    let optedIn: boolean | undefined = undefined;
+    if (optIn === "true") optedIn = true;
+    if (optIn === "false") optedIn = false;
 
-  if (search) {
-    filtered = filtered.filter(
-      (c) =>
-        c.name.toLowerCase().includes(search) ||
-        c.phone.includes(search) ||
-        (c.email && c.email.toLowerCase().includes(search)) ||
-        c.tags.some((t) => t.toLowerCase().includes(search))
+    let optedOut: boolean | undefined = undefined;
+    if (optOut === "true") optedOut = true;
+    if (optOut === "false") optedOut = false;
+
+    const customers = await getCustomersFromDb({
+      search,
+      segment: segment !== "all" ? segment : undefined,
+      tag,
+      optedIn,
+      optedOut,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: customers,
+      total: customers.length,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
     );
   }
-
-  if (segment && segment !== "all") {
-    filtered = filtered.filter((c) => c.segment === segment);
-  }
-
-  if (country) {
-    filtered = filtered.filter((c) => c.countryCode === country);
-  }
-
-  if (tag) {
-    filtered = filtered.filter((c) => c.tags.includes(tag));
-  }
-
-  if (optIn === "true") {
-    filtered = filtered.filter((c) => c.optedIn && !c.optedOut);
-  }
-
-  if (optOut === "true") {
-    filtered = filtered.filter((c) => c.optedOut);
-  }
-
-  return NextResponse.json({
-    success: true,
-    data: filtered,
-    total: filtered.length,
-  });
 }
 
 export async function POST(request: Request) {
@@ -59,19 +49,7 @@ export async function POST(request: Request) {
     const validated = customerSchema.parse(json);
     const { normalized } = normalizePhoneNumber(validated.phone);
 
-    const customers = db.getCustomers();
-    const existingIndex = customers.findIndex((c) => c.phone === normalized);
-    if (existingIndex !== -1) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: { code: "DUPLICATE_PHONE", message: "Customer with this phone already exists" },
-        },
-        { status: 409 }
-      );
-    }
-
-    const newCustomer: Customer = {
+    const newCustomerData: Customer = {
       id: `cust_${Date.now()}`,
       name: validated.name,
       phone: normalized,
@@ -88,18 +66,17 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
+    const saved = await createCustomerInDb(newCustomerData);
+
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
       method: "POST",
-      body: { action: "upsert", customer: newCustomer },
+      body: { action: "upsert", customer: saved },
     }).catch(() => null);
-
-    customers.unshift(newCustomer);
-    db.setCustomers(customers);
 
     return NextResponse.json({
       success: true,
-      data: newCustomer,
-      message: "Customer created successfully",
+      data: saved,
+      message: "Customer created successfully in PostgreSQL database",
     });
   } catch (err: unknown) {
     return NextResponse.json(

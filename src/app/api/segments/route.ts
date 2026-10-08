@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { getSegmentsFromDb, createSegmentInDb } from "@/lib/db";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { CustomerSegment } from "@/types";
 
 export async function GET() {
-  return NextResponse.json({
-    success: true,
-    data: db.getSegments(),
-  });
+  try {
+    const segments = await getSegmentsFromDb();
+    return NextResponse.json({
+      success: true,
+      data: segments,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -31,19 +39,17 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
+    const saved = await createSegmentInDb(newSegment);
+
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
       method: "POST",
-      body: { action: "create_segment", segment: newSegment },
+      body: { action: "create_segment", segment: saved },
     }).catch(() => null);
-
-    const segments = db.getSegments();
-    segments.push(newSegment);
-    db.setSegments(segments);
 
     return NextResponse.json({
       success: true,
-      data: newSegment,
-      message: "Customer segment created successfully",
+      data: saved,
+      message: "Customer segment created successfully in PostgreSQL",
     });
   } catch (err: unknown) {
     return NextResponse.json(

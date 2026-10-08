@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizePhoneNumber } from "@/lib/validation";
+import { createCustomerInDb } from "@/lib/db";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Customer } from "@/types";
@@ -38,7 +39,6 @@ export async function POST(request: Request) {
       }
 
       // Explicit Opt-Out check: Do not import customers who are opted-out
-      const isOptedIn = r.optedIn === true || r.optedIn === "true" || r.optedIn === "1" || r.optedIn === undefined;
       const isOptedOut = r.optedIn === false || r.optedIn === "false" || r.optedIn === "0";
 
       if (isOptedOut) {
@@ -60,8 +60,8 @@ export async function POST(request: Request) {
 
       const tagsArray = typeof r.tags === "string" ? r.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
 
-      validCustomers.push({
-        id: `cust_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      const customerRecord: Customer = {
+        id: `cust_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         name: r.name.trim(),
         phone: normalized,
         email: r.email?.trim() || undefined,
@@ -73,7 +73,15 @@ export async function POST(request: Request) {
         optedOut: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+      };
+
+      try {
+        const saved = await createCustomerInDb(customerRecord);
+        validCustomers.push(saved);
+      } catch (saveErr) {
+        console.error("Failed to save imported customer:", saveErr);
+        invalidRows.push({ row: r, reason: (saveErr as Error).message });
+      }
     }
 
     // Forward batch to n8n Customer Import Webhook
@@ -96,7 +104,7 @@ export async function POST(request: Request) {
         suppressedOptOutCount: optedOutSuppressed.length,
         invalidRows,
       },
-      message: `Successfully processed ${validCustomers.length} valid customer records.`,
+      message: `Successfully processed and persisted ${validCustomers.length} valid customer records to PostgreSQL.`,
     });
   } catch (err: unknown) {
     return NextResponse.json(

@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/data/store";
+import { getTemplatesFromDb, createTemplateInDb } from "@/lib/db";
 import { templateSchema, extractTemplateVariables } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Template } from "@/types";
 
 export async function GET() {
-  return NextResponse.json({
-    success: true,
-    data: db.getTemplates(),
-  });
+  try {
+    const templates = await getTemplatesFromDb();
+    return NextResponse.json({
+      success: true,
+      data: templates,
+    });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { success: false, error: { code: "DB_ERROR", message: (err as Error).message } },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -33,19 +41,17 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
+    const saved = await createTemplateInDb(newTemplate);
+
     forwardToN8n(env.N8N_TEMPLATES_WEBHOOK, {
       method: "POST",
-      body: { action: "create", template: newTemplate },
+      body: { action: "create", template: saved },
     }).catch(() => null);
-
-    const templates = db.getTemplates();
-    templates.unshift(newTemplate);
-    db.setTemplates(templates);
 
     return NextResponse.json({
       success: true,
-      data: newTemplate,
-      message: "Template created successfully",
+      data: saved,
+      message: "Template created successfully in PostgreSQL",
     });
   } catch (err: unknown) {
     return NextResponse.json(

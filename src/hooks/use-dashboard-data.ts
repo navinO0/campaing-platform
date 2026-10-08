@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Campaign, Template, Customer, CustomerSegment, CampaignLog, ApiResponse } from "@/types";
+import type { Campaign, Template, Customer, CustomerSegment, CampaignLog, DashboardStats, ApiResponse } from "@/types";
 import { toast } from "sonner";
 
 export function useCampaigns() {
@@ -425,3 +425,17 @@ export function useSegments() {
     deleteSegment: deleteSegmentMutation.mutateAsync,
   };
 }
+
+export function useDashboardStats() {
+  return useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async (): Promise<DashboardStats> => {
+      const res = await fetch("/api/stats");
+      const json: ApiResponse<DashboardStats> = await res.json();
+      if (!json.success || !json.data) throw new Error(json.error?.message || "Failed to load dashboard statistics");
+      return json.data;
+    },
+    refetchInterval: 10000,
+  });
+}
+
