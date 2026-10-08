@@ -407,3 +407,50 @@ export const initialStats: DashboardStats = {
   failureRate: 0.03,
   optOutRate: 0.004,
 };
+
+// Global in-memory storage manager
+declare global {
+  var __db_customers: Customer[] | undefined;
+  var __db_campaigns: Campaign[] | undefined;
+  var __db_templates: Template[] | undefined;
+  var __db_segments: CustomerSegment[] | undefined;
+}
+
+export const db = {
+  getCustomers: (): Customer[] => {
+    if (!global.__db_customers) {
+      global.__db_customers = [...initialCustomers];
+    }
+    return global.__db_customers;
+  },
+  setCustomers: (customers: Customer[]) => {
+    global.__db_customers = customers;
+  },
+  getCampaigns: (): Campaign[] => {
+    if (!global.__db_campaigns) {
+      global.__db_campaigns = [...initialCampaigns];
+    }
+    return global.__db_campaigns;
+  },
+  setCampaigns: (campaigns: Campaign[]) => {
+    global.__db_campaigns = campaigns;
+  },
+  getTemplates: (): Template[] => {
+    if (!global.__db_templates) {
+      global.__db_templates = [...initialTemplates];
+    }
+    return global.__db_templates;
+  },
+  setTemplates: (templates: Template[]) => {
+    global.__db_templates = templates;
+  },
+  getSegments: (): CustomerSegment[] => {
+    if (!global.__db_segments) {
+      global.__db_segments = [...initialSegments];
+    }
+    return global.__db_segments;
+  },
+  setSegments: (segments: CustomerSegment[]) => {
+    global.__db_segments = segments;
+  },
+};

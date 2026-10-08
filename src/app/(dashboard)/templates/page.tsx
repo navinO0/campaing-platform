@@ -11,25 +11,33 @@ import { Modal } from "@/components/ui/modal";
 import { WhatsAppPreview } from "@/components/whatsapp/whatsapp-preview";
 import { extractTemplateVariables } from "@/lib/validation";
 import {
-  FileText,
   PlusCircle,
   RefreshCw,
   Sparkles,
   Link as LinkIcon,
   Phone,
-  Copy,
   Trash2,
-  Image as ImageIcon,
+  Edit2,
 } from "lucide-react";
-import type { MediaType, TemplateButton } from "@/types";
+import type { MediaType, TemplateButton, Template } from "@/types";
 import { toast } from "sonner";
 
 export default function TemplatesPage() {
-  const { templates, syncTemplates, isSyncing, createTemplate } = useTemplates();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState(templates[0]);
+  const {
+    templates,
+    syncTemplates,
+    isSyncing,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+  } = useTemplates();
 
-  // Template Form state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template>(templates[0]);
+  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
+
+  // Form state
   const [name, setName] = useState("");
   const [category, setCategory] = useState<"MARKETING" | "UTILITY" | "AUTHENTICATION">("MARKETING");
   const [bodyText, setBodyText] = useState(
@@ -82,7 +90,46 @@ export default function TemplatesPage() {
       mediaUrl: mediaType !== "none" ? mediaUrl : undefined,
       buttons,
     });
-    setModalOpen(false);
+    setCreateModalOpen(false);
+  };
+
+  const handleOpenEdit = (tpl: Template, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingTemplate(tpl);
+    setName(tpl.name);
+    setCategory(tpl.category);
+    setBodyText(tpl.bodyText);
+    setMediaType(tpl.mediaType);
+    setMediaUrl(tpl.mediaUrl || "");
+    setButtons(tpl.buttons || []);
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTemplate || !name.trim()) return;
+    await updateTemplate({
+      id: editingTemplate.id,
+      data: {
+        name,
+        category,
+        bodyText,
+        mediaType,
+        mediaUrl: mediaType !== "none" ? mediaUrl : undefined,
+        buttons,
+      },
+    });
+    setEditModalOpen(false);
+    setEditingTemplate(null);
+  };
+
+  const handleDeleteTemplate = async (id: string, name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm(`Are you sure you want to delete template "${name}"?`)) {
+      await deleteTemplate(id);
+      if (selectedTemplate?.id === id) {
+        setSelectedTemplate(templates[0]);
+      }
+    }
   };
 
   return (
@@ -94,7 +141,7 @@ export default function TemplatesPage() {
             WhatsApp Template Manager
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Create, sync, and preview templates compliant with Evolution API & Meta guidelines.
+            Create, edit, delete, and sync WhatsApp marketing templates with Evolution API & Meta guidelines.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -107,7 +154,7 @@ export default function TemplatesPage() {
             <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
             {isSyncing ? "Syncing..." : "Sync Templates"}
           </Button>
-          <Button onClick={() => setModalOpen(true)} className="gap-2">
+          <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
             <PlusCircle className="h-4 w-4" />
             Create Template
           </Button>
@@ -135,7 +182,26 @@ export default function TemplatesPage() {
                       {tpl.status}
                     </Badge>
                   </div>
-                  <span className="text-xs uppercase font-mono text-zinc-400">{tpl.category}</span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => handleOpenEdit(tpl, e)}
+                      title="Edit Template"
+                      className="h-7 w-7"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => handleDeleteTemplate(tpl.id, tpl.name, e)}
+                      title="Delete Template"
+                      className="h-7 w-7 text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -183,13 +249,13 @@ export default function TemplatesPage() {
 
       {/* Create Template Modal */}
       <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
         title="Create New WhatsApp Template"
         description="Configure text body, dynamic variable placeholders, media attachments, and CTA buttons."
         footer={
           <>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateModalOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleSaveTemplate} className="gap-1.5">
@@ -329,6 +395,50 @@ export default function TemplatesPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Template Modal */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit WhatsApp Template"
+        description="Modify message text, variables, media URL, or CTA buttons."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>Update Template</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">Template Name *</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">Message Body *</label>
+            <Textarea
+              rows={5}
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              className="mt-1 font-mono text-xs"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">Header Media URL</label>
+            <Input
+              value={mediaUrl}
+              onChange={(e) => setMediaUrl(e.target.value)}
+              className="mt-1 text-xs"
+            />
           </div>
         </div>
       </Modal>

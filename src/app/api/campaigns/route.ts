@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
-import { initialCampaigns, initialTemplates } from "@/lib/data/store";
+import { db, initialTemplates } from "@/lib/data/store";
 import { campaignSchema } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Campaign } from "@/types";
 
-// In-memory campaign state fallback
-let campaignsList = [...initialCampaigns];
-
 export async function GET() {
   return NextResponse.json({
     success: true,
-    data: campaignsList,
+    data: db.getCampaigns(),
   });
 }
 
@@ -20,7 +17,8 @@ export async function POST(request: Request) {
     const json = await request.json();
     const validated = campaignSchema.parse(json);
 
-    const template = initialTemplates.find((t) => t.id === validated.templateId);
+    const templates = db.getTemplates();
+    const template = templates.find((t) => t.id === validated.templateId) || initialTemplates[0];
 
     const newCampaign: Campaign = {
       id: `cmp_${Date.now()}`,
@@ -53,7 +51,6 @@ export async function POST(request: Request) {
       startedAt: validated.schedule.type === "immediate" ? new Date().toISOString() : null,
     };
 
-    // Forward campaign start request to n8n if immediate
     if (validated.schedule.type === "immediate") {
       forwardToN8n(env.N8N_CAMPAIGN_START_WEBHOOK, {
         method: "POST",
@@ -71,7 +68,9 @@ export async function POST(request: Request) {
       });
     }
 
-    campaignsList = [newCampaign, ...campaignsList];
+    const campaigns = db.getCampaigns();
+    campaigns.unshift(newCampaign);
+    db.setCampaigns(campaigns);
 
     return NextResponse.json({
       success: true,

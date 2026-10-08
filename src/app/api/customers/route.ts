@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { initialCustomers } from "@/lib/data/store";
+import { db } from "@/lib/data/store";
 import { customerSchema, normalizePhoneNumber } from "@/lib/validation";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { Customer } from "@/types";
-
-let customersList = [...initialCustomers];
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -13,8 +11,10 @@ export async function GET(request: Request) {
   const segment = searchParams.get("segment");
   const optIn = searchParams.get("optedIn");
   const optOut = searchParams.get("optedOut");
+  const country = searchParams.get("country");
+  const tag = searchParams.get("tag");
 
-  let filtered = [...customersList];
+  let filtered = [...db.getCustomers()];
 
   if (search) {
     filtered = filtered.filter(
@@ -28,6 +28,14 @@ export async function GET(request: Request) {
 
   if (segment && segment !== "all") {
     filtered = filtered.filter((c) => c.segment === segment);
+  }
+
+  if (country) {
+    filtered = filtered.filter((c) => c.countryCode === country);
+  }
+
+  if (tag) {
+    filtered = filtered.filter((c) => c.tags.includes(tag));
   }
 
   if (optIn === "true") {
@@ -49,11 +57,10 @@ export async function POST(request: Request) {
   try {
     const json = await request.json();
     const validated = customerSchema.parse(json);
-
     const { normalized } = normalizePhoneNumber(validated.phone);
 
-    // Duplicate check
-    const existingIndex = customersList.findIndex((c) => c.phone === normalized);
+    const customers = db.getCustomers();
+    const existingIndex = customers.findIndex((c) => c.phone === normalized);
     if (existingIndex !== -1) {
       return NextResponse.json(
         {
@@ -81,13 +88,13 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    // Forward to n8n contacts webhook
     forwardToN8n(env.N8N_CONTACTS_WEBHOOK, {
       method: "POST",
       body: { action: "upsert", customer: newCustomer },
     }).catch(() => null);
 
-    customersList = [newCustomer, ...customersList];
+    customers.unshift(newCustomer);
+    db.setCustomers(customers);
 
     return NextResponse.json({
       success: true,

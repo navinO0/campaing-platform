@@ -8,13 +8,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
-import { Layers, PlusCircle, Users, Filter, Sparkles } from "lucide-react";
+import { PlusCircle, Users, Sparkles, Edit2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
+import type { CustomerSegment } from "@/types";
 
 export default function SegmentsPage() {
-  const { segments, refetch } = useSegments();
-  const [modalOpen, setModalOpen] = useState(false);
+  const { segments, createSegment, updateSegment, deleteSegment } = useSegments();
+
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingSegment, setEditingSegment] = useState<CustomerSegment | null>(null);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [tagFilter, setTagFilter] = useState("");
@@ -27,10 +32,42 @@ export default function SegmentsPage() {
     }
 
     try {
-      const res = await fetch("/api/segments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await createSegment({
+        name,
+        description,
+        filter: {
+          optedIn: true,
+          tags: tagFilter ? tagFilter.split(",").map((t) => t.trim()) : undefined,
+          minSpent: minSpent ? Number(minSpent) : undefined,
+        },
+      });
+
+      setCreateModalOpen(false);
+      setName("");
+      setDescription("");
+      setTagFilter("");
+      setMinSpent("");
+    } catch (err: unknown) {
+      toast.error((err as Error).message);
+    }
+  };
+
+  const handleOpenEdit = (seg: CustomerSegment) => {
+    setEditingSegment(seg);
+    setName(seg.name);
+    setDescription(seg.description || "");
+    setTagFilter(seg.filter.tags ? seg.filter.tags.join(", ") : "");
+    setMinSpent(seg.filter.minSpent ? String(seg.filter.minSpent) : "");
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSegment || !name.trim()) return;
+
+    try {
+      await updateSegment({
+        id: editingSegment.id,
+        data: {
           name,
           description,
           filter: {
@@ -38,24 +75,19 @@ export default function SegmentsPage() {
             tags: tagFilter ? tagFilter.split(",").map((t) => t.trim()) : undefined,
             minSpent: minSpent ? Number(minSpent) : undefined,
           },
-        }),
+        },
       });
 
-      const json = await res.json();
-      if (!json.success) {
-        toast.error(json.error?.message || "Failed to create segment");
-        return;
-      }
+      setEditModalOpen(false);
+      setEditingSegment(null);
+    } catch (err: unknown) {
+      toast.error((err as Error).message);
+    }
+  };
 
-      toast.success("Segment definition registered!");
-      setModalOpen(false);
-      setName("");
-      setDescription("");
-      setTagFilter("");
-      setMinSpent("");
-      refetch();
-    } catch {
-      toast.error("Failed to connect to segments API");
+  const handleDeleteSegment = async (id: string, name: string) => {
+    if (confirm(`Are you sure you want to delete segment "${name}"?`)) {
+      await deleteSegment(id);
     }
   };
 
@@ -67,10 +99,10 @@ export default function SegmentsPage() {
             Customer Audience Segments
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Define reusable filter logic dispatched directly to n8n without transmitting large datasets.
+            Define, update, or remove reusable audience filter logic dispatched directly to n8n.
           </p>
         </div>
-        <Button onClick={() => setModalOpen(true)} className="gap-2">
+        <Button onClick={() => setCreateModalOpen(true)} className="gap-2">
           <PlusCircle className="h-4 w-4" />
           Create Segment
         </Button>
@@ -82,9 +114,29 @@ export default function SegmentsPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">{seg.name}</CardTitle>
-                <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-                  <Users className="h-3.5 w-3.5" />
-                  <span>{seg.customerCount}</span>
+                <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5 text-xs text-zinc-500 mr-2">
+                    <Users className="h-3.5 w-3.5" />
+                    <span>{seg.customerCount}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleOpenEdit(seg)}
+                    title="Edit Segment"
+                    className="h-7 w-7"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteSegment(seg.id, seg.name)}
+                    title="Delete Segment"
+                    className="h-7 w-7 text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -113,13 +165,13 @@ export default function SegmentsPage() {
 
       {/* Create Segment Modal */}
       <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
         title="Create Audience Segment"
         description="Filter definitions will be dispatched to n8n to resolve audiences dynamically."
         footer={
           <>
-            <Button variant="outline" onClick={() => setModalOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateModalOpen(false)}>
               Cancel
             </Button>
             <Button onClick={handleCreateSegment} className="gap-1.5">
@@ -168,6 +220,62 @@ export default function SegmentsPage() {
               value={minSpent}
               onChange={(e) => setMinSpent(e.target.value)}
               placeholder="10000"
+              className="mt-1"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Segment Modal */}
+      <Modal
+        isOpen={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Audience Segment"
+        description="Update segment filter properties."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>Update Segment</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">Segment Name *</label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">Description</label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">
+              Filter by Tags (Comma separated)
+            </label>
+            <Input
+              value={tagFilter}
+              onChange={(e) => setTagFilter(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold uppercase text-zinc-500">
+              Minimum Lifetime Spend (₹)
+            </label>
+            <Input
+              type="number"
+              value={minSpent}
+              onChange={(e) => setMinSpent(e.target.value)}
               className="mt-1"
             />
           </div>

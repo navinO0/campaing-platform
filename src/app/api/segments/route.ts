@@ -1,15 +1,13 @@
 import { NextResponse } from "next/server";
-import { initialSegments } from "@/lib/data/store";
+import { db } from "@/lib/data/store";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 import { env } from "@/config/env";
 import type { CustomerSegment } from "@/types";
 
-let segmentsList = [...initialSegments];
-
 export async function GET() {
   return NextResponse.json({
     success: true,
-    data: segmentsList,
+    data: db.getSegments(),
   });
 }
 
@@ -38,7 +36,9 @@ export async function POST(request: Request) {
       body: { action: "create_segment", segment: newSegment },
     }).catch(() => null);
 
-    segmentsList = [newSegment, ...segmentsList];
+    const segments = db.getSegments();
+    segments.push(newSegment);
+    db.setSegments(segments);
 
     return NextResponse.json({
       success: true,
