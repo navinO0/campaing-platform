@@ -127,5 +127,8 @@ Health check is verified automatically via `/api/health`.
 ---
 
 ## 📚 Documentation
+- [Developer Master Handbook (Complete System Reference)](docs/DEVELOPER_MASTER_HANDBOOK.md)
+- [Enterprise PostgreSQL & n8n Architecture Guide](docs/POSTGRES_N8N_ENTERPRISE_ARCHITECTURE.md)
 - [n8n Webhook API Contracts](docs/n8n-api-contract.md)
 - [Operational & Security Configuration Guide](docs/configuration.md)
+
