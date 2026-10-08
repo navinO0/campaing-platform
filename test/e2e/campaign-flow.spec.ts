@@ -20,19 +20,19 @@ test.describe("WhatsApp Promotional Campaign Manager E2E Flow", () => {
     await page.goto("/customers");
     await expect(page.locator("h1")).toContainText("Customer Directory");
     await expect(page.getByText("Aarav Sharma")).toBeVisible();
-    await expect(page.getByText("Opted In")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Opted In" })).toBeVisible();
   });
 
   test("loads WhatsApp templates and triggers preview", async ({ page }) => {
     await page.goto("/templates");
     await expect(page.locator("h1")).toContainText("WhatsApp Template Manager");
     await expect(page.getByText("Festive Season Discount Offer")).toBeVisible();
-    await expect(page.getByText("Live WhatsApp Simulation")).toBeVisible();
+    await expect(page.getByText("Template Preview")).toBeVisible();
   });
 
   test("navigates to settings and verifies n8n integration status", async ({ page }) => {
     await page.goto("/settings");
     await expect(page.getByText("n8n Orchestration Server")).toBeVisible();
-    await expect(page.getByText("Evolution API")).toBeVisible();
+    await expect(page.getByText("WhatsApp Transport Layer")).toBeVisible();
   });
 });
