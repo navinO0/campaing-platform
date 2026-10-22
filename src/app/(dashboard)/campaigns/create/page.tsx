@@ -37,6 +37,13 @@ export default function CreateCampaignWizardPage() {
   // Form State
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [evolutionInstance, setEvolutionInstance] = useState("");
+  const [evolutionApiUrl, setEvolutionApiUrl] = useState("");
+  const [availableInstances, setAvailableInstances] = useState<
+    Array<{ name: string; connectionStatus: string; number?: string; apiUrl: string; isDefault: boolean }>
+  >([]);
+  const [isLoadingInstances, setIsLoadingInstances] = useState(false);
+
   const [audienceType, setAudienceType] = useState<"all_opted_in" | "segment" | "csv_upload" | "manual_selection">("all_opted_in");
   const [selectedSegmentId, setSelectedSegmentId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -54,6 +61,30 @@ export default function CreateCampaignWizardPage() {
   const [batchSize, setBatchSize] = useState(20);
   const [delaySeconds, setDelaySeconds] = useState(5);
   const [maxPerMinute, setMaxPerMinute] = useState(60);
+
+  // Fetch available Evolution instances from server
+  React.useEffect(() => {
+    async function loadInstances() {
+      setIsLoadingInstances(true);
+      try {
+        const res = await fetch("/api/evolution/instances");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.instances?.length) {
+            setAvailableInstances(data.instances);
+            const defaultInst = data.instances.find((i: any) => i.isDefault) || data.instances[0];
+            setEvolutionInstance(defaultInst.name);
+            setEvolutionApiUrl(defaultInst.apiUrl || data.defaultApiUrl || "");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load Evolution instances:", e);
+      } finally {
+        setIsLoadingInstances(false);
+      }
+    }
+    loadInstances();
+  }, []);
 
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) || templates[0];
   const detectedVariables = selectedTemplate ? extractTemplateVariables(selectedTemplate.bodyText) : [];
@@ -117,6 +148,8 @@ export default function CreateCampaignWizardPage() {
           delaySeconds: Number(delaySeconds),
           maxPerMinute: Number(maxPerMinute),
         },
+        evolutionInstance: evolutionInstance || undefined,
+        evolutionApiUrl: evolutionApiUrl || undefined,
       };
 
       await createCampaign(campaignPayload);
@@ -199,6 +232,60 @@ export default function CreateCampaignWizardPage() {
                     onChange={(e) => setDescription(e.target.value)}
                     className="mt-1.5"
                   />
+                </div>
+
+                <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold uppercase text-zinc-500">
+                      WhatsApp Evolution API Instance
+                    </label>
+                    <span className="text-xs text-zinc-400">
+                      Loaded from environment & API
+                    </span>
+                  </div>
+
+                  {isLoadingInstances ? (
+                    <div className="mt-1.5 text-xs text-zinc-500 animate-pulse">
+                      Loading available WhatsApp instances...
+                    </div>
+                  ) : availableInstances.length > 0 ? (
+                    <div className="mt-1.5 space-y-2">
+                      <select
+                        className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                        value={evolutionInstance}
+                        onChange={(e) => {
+                          const inst = availableInstances.find((i) => i.name === e.target.value);
+                          setEvolutionInstance(e.target.value);
+                          if (inst?.apiUrl) {
+                            setEvolutionApiUrl(inst.apiUrl);
+                          }
+                        }}
+                      >
+                        {availableInstances.map((inst) => (
+                          <option key={inst.name} value={inst.name}>
+                            {inst.name} {inst.number ? `(${inst.number})` : ""} - {inst.connectionStatus.toUpperCase()} {inst.isDefault ? "• (Default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
+                        <span>
+                          Active WhatsApp connection:{" "}
+                          <strong className="text-zinc-700 dark:text-zinc-300 font-mono">
+                            {evolutionInstance || "Default"}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <Input
+                      placeholder="e.g. ProductionInstance"
+                      value={evolutionInstance}
+                      onChange={(e) => setEvolutionInstance(e.target.value)}
+                      className="mt-1.5 font-mono"
+                    />
+                  )}
                 </div>
               </CardContent>
             </Card>

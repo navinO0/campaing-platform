@@ -37,7 +37,16 @@ export async function forwardToN8n<T>(
     retries = options.idempotent ? env.N8N_MAX_RETRIES : 0,
   } = options;
 
-  const url = `${env.N8N_BASE_URL.replace(/\/+$/, "")}/${webhookPath.replace(/^\/+/, "")}`;
+  const baseUrl = (env.N8N_BASE_URL || "").replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new N8nClientError(
+      "N8N_BASE_URL is not configured. Please set N8N_BASE_URL in your deployment environment (e.g. Coolify).",
+      500,
+      "N8N_NOT_CONFIGURED"
+    );
+  }
+
+  const url = `${baseUrl}/${webhookPath.replace(/^\/+/, "")}`;
   const requestId = generateRequestId();
   const startTime = Date.now();
 

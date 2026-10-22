@@ -9,27 +9,58 @@ import type {
   DashboardStats,
 } from "@/types";
 
-// Clean connection URL to avoid pg-pool leaf signature verification issue with sslmode=require
-let connectionUrl = env.DATABASE_URL || "postgres://postgres:8r7OI5gyHV7RSXNTYOl5MUCrDfcCOOrdD92Ytz6IXDrHRCOgzYXwv24H2qGsOUix@100.121.9.105:6574/postgres";
-connectionUrl = connectionUrl.replace(/[?&]sslmode=[^&]+/, "");
-
 declare global {
   var __pg_pool: Pool | undefined;
 }
 
-export const pool =
-  global.__pg_pool ||
-  new Pool({
-    connectionString: connectionUrl,
+/**
+ * Lazily creates and returns the PostgreSQL connection pool.
+ * Dynamically retrieves DATABASE_URL from process.env at runtime (Coolify / Docker container).
+ */
+export function getPool(): Pool {
+  if (global.__pg_pool) {
+    return global.__pg_pool;
+  }
+
+  const connectionUrl = env.DATABASE_URL;
+  if (!connectionUrl) {
+    throw new Error(
+      "DATABASE_URL environment variable is missing. Please configure DATABASE_URL in your deployment platform (e.g. Coolify)."
+    );
+  }
+
+  // Clean connection URL to avoid pg-pool leaf signature verification issue with sslmode=require
+  const cleanUrl = connectionUrl.replace(/[?&]sslmode=[^&]+/, "");
+
+  const poolInstance = new Pool({
+    connectionString: cleanUrl,
     ssl: { rejectUnauthorized: false },
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 10000,
   });
 
-if (process.env.NODE_ENV !== "production") {
-  global.__pg_pool = pool;
+  if (process.env.NODE_ENV !== "production") {
+    global.__pg_pool = poolInstance;
+  }
+
+  return poolInstance;
 }
+
+/**
+ * Proxy object for pg Pool that lazily delegates all method calls (query, connect, etc.)
+ * to getPool(), ensuring that connection is initialized dynamically at runtime when requested.
+ */
+export const pool = new Proxy({} as Pool, {
+  get(_target, prop: string | symbol) {
+    const targetPool = getPool();
+    const val = (targetPool as any)[prop];
+    if (typeof val === "function") {
+      return val.bind(targetPool);
+    }
+    return val;
+  },
+});
 
 // ----------------------------------------------------
 // Row Mappers
@@ -104,6 +135,8 @@ function mapCampaign(row: any): Campaign {
     tracking: row.tracking ? row.tracking : undefined,
     schedule: row.schedule || { type: "immediate" },
     throttling: row.throttling || { batchSize: 10, delaySeconds: 3, maxPerMinute: 60 },
+    evolutionInstance: row.evolution_instance || env.EVOLUTION_INSTANCE_NAME,
+    evolutionApiUrl: row.evolution_api_url || env.EVOLUTION_API_URL,
     stats: {
       totalAudience: Number(row.total_audience) || 0,
       queued: Number(row.queued_count) || 0,
@@ -563,15 +596,19 @@ export async function createCampaignInDb(campaign: Campaign): Promise<Campaign> 
     const totalAudience = customerRows.length;
 
     // 2. Insert Campaign Row
+    const evolutionInstance = campaign.evolutionInstance || env.EVOLUTION_INSTANCE_NAME;
+    const evolutionApiUrl = campaign.evolutionApiUrl || env.EVOLUTION_API_URL;
+
     const insertCampaignSql = `
       INSERT INTO whatsapp_campaign.campaigns (
         id, name, description, status, template_id, template_name, audience_type, segment_id,
-        variables, media, tracking, schedule, throttling, total_audience, queued_count,
+        variables, media, tracking, schedule, throttling, evolution_instance, evolution_api_url,
+        total_audience, queued_count,
         sent_count, delivered_count, read_count, failed_count, opted_out_count,
         created_at, updated_at, started_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-        0, 0, 0, 0, 0, NOW(), NOW(), $16
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+        0, 0, 0, 0, 0, NOW(), NOW(), $18
       )
       RETURNING *;
     `;
@@ -593,6 +630,8 @@ export async function createCampaignInDb(campaign: Campaign): Promise<Campaign> 
       campaign.tracking ? JSON.stringify(campaign.tracking) : null,
       JSON.stringify(campaign.schedule || { type: "immediate" }),
       JSON.stringify(campaign.throttling || { batchSize: 10, delaySeconds: 3, maxPerMinute: 60 }),
+      evolutionInstance,
+      evolutionApiUrl,
       totalAudience,
       totalAudience, // all initial audience queued
       startedAt,
@@ -638,9 +677,10 @@ export async function createCampaignInDb(campaign: Campaign): Promise<Campaign> 
         `
         INSERT INTO whatsapp_campaign.campaign_jobs (
           campaign_id, customer_id, customer_name, phone, message,
-          media_url, media_type, status, idempotency_key, created_at, updated_at
+          media_url, media_type, evolution_instance, evolution_api_url,
+          status, idempotency_key, created_at, updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, 'pending', $8, NOW(), NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, NOW(), NOW()
         )
         ON CONFLICT (idempotency_key) DO NOTHING;
         `,
@@ -652,6 +692,8 @@ export async function createCampaignInDb(campaign: Campaign): Promise<Campaign> 
           personalized,
           campaign.media?.url || null,
           campaign.media?.type || "none",
+          evolutionInstance,
+          evolutionApiUrl,
           idempotencyKey,
         ]
       );
@@ -684,8 +726,10 @@ export async function updateCampaignInDb(id: string, updates: Partial<Campaign>)
       tracking = $8,
       schedule = $9,
       throttling = $10,
+      evolution_instance = $11,
+      evolution_api_url = $12,
       updated_at = NOW()
-    WHERE id = $11
+    WHERE id = $13
     RETURNING *;
   `;
   const values = [
@@ -699,6 +743,8 @@ export async function updateCampaignInDb(id: string, updates: Partial<Campaign>)
     merged.tracking ? JSON.stringify(merged.tracking) : null,
     JSON.stringify(merged.schedule || {}),
     JSON.stringify(merged.throttling || {}),
+    merged.evolutionInstance || env.EVOLUTION_INSTANCE_NAME,
+    merged.evolutionApiUrl || env.EVOLUTION_API_URL,
     id,
   ];
 

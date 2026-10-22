@@ -132,6 +132,8 @@ export interface Campaign {
   tracking?: CampaignTracking;
   schedule: CampaignSchedule;
   throttling?: CampaignThrottling;
+  evolutionInstance?: string;
+  evolutionApiUrl?: string;
   stats: {
     totalAudience: number;
     queued: number;
