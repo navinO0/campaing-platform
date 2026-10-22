@@ -3,10 +3,34 @@ import {
   normalizePhoneNumber,
   extractTemplateVariables,
   buildTrackingUrl,
+  templateSchema,
 } from "@/lib/validation";
 import { maskPhoneNumber, generateHmacSignature } from "@/lib/security";
 
 describe("Validation and Utility Unit Tests", () => {
+  it("validates enterprise templates with headers, footers, and example values", () => {
+    const rawTemplate = {
+      name: "Service Maintenance Notice",
+      description: "Scheduled maintenance reminder with charges",
+      category: "UTILITY",
+      headerText: "🛠️ Scheduled Maintenance",
+      bodyText: "Hello {{customer_name}}, maintenance for {{service_name}} is ₹{{amount_due}}.",
+      footerText: "Reply STOP to unsubscribe",
+      exampleValues: { customer_name: "Aarav", service_name: "AC", amount_due: "1499" },
+      mediaType: "none",
+      buttons: [
+        { id: "b1", type: "visit_website", text: "Pay Now", url: "https://pay.example.com" }
+      ]
+    };
+
+    const parsed = templateSchema.safeParse(rawTemplate);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.headerText).toBe("🛠️ Scheduled Maintenance");
+      expect(parsed.data.footerText).toBe("Reply STOP to unsubscribe");
+      expect(parsed.data.exampleValues?.amount_due).toBe("1499");
+    }
+  });
   it("normalizes international Indian phone numbers correctly", () => {
     const res1 = normalizePhoneNumber("+919876543210");
     expect(res1.isValid).toBe(true);

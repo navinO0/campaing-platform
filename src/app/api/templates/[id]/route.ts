@@ -40,10 +40,14 @@ export async function PUT(
 
     const updated = await updateTemplateInDb(id, {
       name: validated.name,
+      description: validated.description,
       language: validated.language,
       category: validated.category,
+      headerText: validated.headerText,
       bodyText: validated.bodyText,
+      footerText: validated.footerText,
       variables,
+      exampleValues: validated.exampleValues || {},
       mediaType: validated.mediaType,
       mediaUrl: validated.mediaUrl || undefined,
       buttons: validated.buttons || [],

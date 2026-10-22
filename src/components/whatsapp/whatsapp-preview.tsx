@@ -7,7 +7,9 @@ import { Button } from "@/components/ui/button";
 import type { MediaType, TemplateButton } from "@/types";
 
 interface WhatsAppPreviewProps {
+  headerText?: string;
   bodyText: string;
+  footerText?: string;
   variables?: Record<string, string>;
   mediaType?: MediaType;
   mediaUrl?: string;
@@ -16,7 +18,9 @@ interface WhatsAppPreviewProps {
 }
 
 export function WhatsAppPreview({
+  headerText,
   bodyText,
+  footerText,
   variables = {},
   mediaType = "none",
   mediaUrl,
@@ -26,8 +30,9 @@ export function WhatsAppPreview({
   const [deviceMode, setDeviceMode] = useState<"mobile" | "desktop">("mobile");
 
   // Interpolate variable placeholders like {{customer_name}}
-  const renderMessageContent = () => {
-    let replaced = bodyText || "";
+  const interpolate = (rawText?: string) => {
+    if (!rawText) return "";
+    let replaced = rawText;
     Object.entries(variables).forEach(([k, v]) => {
       const reg = new RegExp(`\\{\\{${k}\\}\\}`, "g");
       replaced = replaced.replace(reg, v || `[${k}]`);
@@ -123,8 +128,22 @@ export function WhatsAppPreview({
               )}
 
               {/* Text Body */}
-              <div className="p-3 whitespace-pre-wrap leading-relaxed break-words text-[13px]">
-                {renderMessageContent() || "Preview will appear here..."}
+              <div className="p-3 leading-relaxed break-words text-[13px]">
+                {headerText && (
+                  <div className="font-bold text-[13px] text-zinc-900 dark:text-zinc-100 pb-1.5 border-b border-black/5 dark:border-white/10 mb-2">
+                    {interpolate(headerText)}
+                  </div>
+                )}
+
+                <div className="whitespace-pre-wrap">
+                  {interpolate(bodyText) || "Preview will appear here..."}
+                </div>
+
+                {footerText && (
+                  <div className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400 opacity-80 border-t border-black/5 dark:border-white/10 pt-1.5">
+                    {interpolate(footerText)}
+                  </div>
+                )}
 
                 {/* WhatsApp Timestamp and Blue Ticks */}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 select-none">

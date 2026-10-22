@@ -84,6 +84,7 @@ function mapCustomer(row: any): Customer {
     lastMessageStatus: row.last_message_status || null,
     purchaseCount: Number(row.purchase_count) || 0,
     totalSpent: Number(row.total_spent) || 0,
+    metadata: typeof row.metadata === "object" && row.metadata !== null ? row.metadata : {},
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
   };
@@ -93,11 +94,15 @@ function mapTemplate(row: any): Template {
   return {
     id: row.id,
     name: row.name,
+    description: row.description || undefined,
     language: row.language || "en",
     category: row.category || "MARKETING",
     status: row.status || "Approved",
+    headerText: row.header_text || undefined,
     bodyText: row.body_text,
+    footerText: row.footer_text || undefined,
     variables: Array.isArray(row.variables) ? row.variables : [],
+    exampleValues: typeof row.example_values === "object" && row.example_values !== null ? row.example_values : {},
     mediaType: row.media_type || "none",
     mediaUrl: row.media_url || undefined,
     buttons: Array.isArray(row.buttons) ? row.buttons : [],
@@ -371,12 +376,21 @@ export async function getTemplateByIdFromDb(id: string): Promise<Template | null
 export async function createTemplateInDb(template: Template): Promise<Template> {
   const query = `
     INSERT INTO whatsapp_campaign.templates (
-      id, name, language, category, status, body_text, variables, media_type, media_url, buttons, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      id, name, description, language, category, status,
+      header_text, body_text, footer_text, variables, example_values,
+      media_type, media_url, buttons, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET
       name = EXCLUDED.name,
+      description = EXCLUDED.description,
+      language = EXCLUDED.language,
+      category = EXCLUDED.category,
+      status = EXCLUDED.status,
+      header_text = EXCLUDED.header_text,
       body_text = EXCLUDED.body_text,
+      footer_text = EXCLUDED.footer_text,
       variables = EXCLUDED.variables,
+      example_values = EXCLUDED.example_values,
       media_type = EXCLUDED.media_type,
       media_url = EXCLUDED.media_url,
       buttons = EXCLUDED.buttons,
@@ -386,11 +400,15 @@ export async function createTemplateInDb(template: Template): Promise<Template> 
   const values = [
     template.id,
     template.name,
+    template.description || null,
     template.language || "en",
     template.category || "MARKETING",
     template.status || "Approved",
+    template.headerText || null,
     template.bodyText,
+    template.footerText || null,
     template.variables || [],
+    JSON.stringify(template.exampleValues || {}),
     template.mediaType || "none",
     template.mediaUrl || null,
     JSON.stringify(template.buttons || []),
@@ -408,25 +426,33 @@ export async function updateTemplateInDb(id: string, updates: Partial<Template>)
   const query = `
     UPDATE whatsapp_campaign.templates SET
       name = $1,
-      language = $2,
-      category = $3,
-      status = $4,
-      body_text = $5,
-      variables = $6,
-      media_type = $7,
-      media_url = $8,
-      buttons = $9,
+      description = $2,
+      language = $3,
+      category = $4,
+      status = $5,
+      header_text = $6,
+      body_text = $7,
+      footer_text = $8,
+      variables = $9,
+      example_values = $10,
+      media_type = $11,
+      media_url = $12,
+      buttons = $13,
       updated_at = NOW()
-    WHERE id = $10
+    WHERE id = $14
     RETURNING *;
   `;
   const values = [
     merged.name,
+    merged.description || null,
     merged.language,
     merged.category,
     merged.status,
+    merged.headerText || null,
     merged.bodyText,
+    merged.footerText || null,
     merged.variables,
+    JSON.stringify(merged.exampleValues || {}),
     merged.mediaType,
     merged.mediaUrl || null,
     JSON.stringify(merged.buttons || []),

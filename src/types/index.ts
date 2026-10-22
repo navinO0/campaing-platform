@@ -33,11 +33,15 @@ export interface TemplateComponent {
 export interface Template {
   id: string;
   name: string;
+  description?: string;
   language: string;
   category: "MARKETING" | "UTILITY" | "AUTHENTICATION";
   status: "Approved" | "Pending" | "Rejected" | "Draft";
+  headerText?: string;
   bodyText: string;
+  footerText?: string;
   variables: string[];
+  exampleValues?: Record<string, string>;
   mediaType: MediaType;
   mediaUrl?: string;
   buttons?: TemplateButton[];
@@ -63,6 +67,7 @@ export interface Customer {
   lastMessageStatus?: "delivered" | "read" | "failed" | "queued" | null;
   purchaseCount?: number;
   totalSpent?: number;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }

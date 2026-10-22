@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "db:migrate": "node scripts/migrate.js",
     "lint": "eslint",
     "test": "vitest run",
     "test:e2e": "playwright test"

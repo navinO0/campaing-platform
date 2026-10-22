@@ -109,13 +109,18 @@ export const customerSchema = z.object({
   optedIn: z.boolean().default(true),
   optedOut: z.boolean().default(false),
   optOutReason: z.string().optional().nullable(),
+  metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 export const templateSchema = z.object({
   name: z.string().min(2, "Template name must be at least 2 characters"),
+  description: z.string().optional(),
   language: z.string().default("en"),
   category: z.enum(["MARKETING", "UTILITY", "AUTHENTICATION"]).default("MARKETING"),
+  headerText: z.string().optional(),
   bodyText: z.string().min(5, "Body text must be at least 5 characters"),
+  footerText: z.string().optional(),
+  exampleValues: z.record(z.string(), z.string()).optional().default({}),
   mediaType: z.enum(["image", "video", "document", "none"]).default("none"),
   mediaUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
   buttons: z.array(
