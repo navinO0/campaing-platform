@@ -193,3 +193,50 @@ export interface ApiResponse<T = unknown> {
   };
   requestId?: string;
 }
+
+export interface Client {
+  id: string;
+  name: string;
+  phone: string;
+  company?: string;
+  serviceType: string;
+  chargesAmount: number;
+  dueDate?: string | null;
+  notes?: string;
+  status: "active" | "pending_payment" | "overdue" | "inactive";
+  customTemplates?: ClientTemplate[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientTemplate {
+  id: string;
+  clientId: string;
+  clientPhone: string;
+  title: string;
+  category: "UTILITY" | "MARKETING" | "AUTHENTICATION";
+  headerText?: string;
+  bodyText: string;
+  footerText?: string;
+  variables: Record<string, string>;
+  mediaType: MediaType;
+  mediaUrl?: string;
+  buttons: TemplateButton[];
+  lastSentAt?: string | null;
+  sentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientReminder {
+  id: string;
+  clientId: string;
+  clientTemplateId?: string | null;
+  phone: string;
+  clientName: string;
+  renderedMessage: string;
+  status: "sent" | "failed" | "pending";
+  evolutionMessageId?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+}

@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   ChevronDown,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import React, { useState } from "react";
@@ -116,6 +117,28 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
               </Link>
             </div>
           )}
+        </div>
+
+        {/* Clients section */}
+        <div>
+          <div className="px-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Clients & Custom Templates
+          </div>
+          <div className="mt-2 space-y-1">
+            <Link
+              href="/clients"
+              onClick={onCloseMobile}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive("/clients")
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+              )}
+            >
+              <UserCheck className="h-4 w-4" />
+              Clients
+            </Link>
+          </div>
         </div>
 
         {/* Customers section */}

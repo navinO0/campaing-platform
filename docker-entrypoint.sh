@@ -8,3 +8,4 @@ if [ -n "$DATABASE_URL" ] && [ -f "./scripts/migrate.js" ]; then
 fi
 
 exec "$@"
+

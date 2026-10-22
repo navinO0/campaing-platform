@@ -20,3 +20,4 @@ ALTER TABLE whatsapp_campaign.campaign_jobs
 ALTER TABLE whatsapp_campaign.campaigns
   ADD COLUMN IF NOT EXISTS header_text TEXT,
   ADD COLUMN IF NOT EXISTS footer_text TEXT;
+

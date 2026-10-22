@@ -105,3 +105,4 @@ CREATE TABLE IF NOT EXISTS whatsapp_campaign.campaign_jobs (
 CREATE INDEX IF NOT EXISTS idx_campaign_jobs_status ON whatsapp_campaign.campaign_jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_campaign_jobs_campaign ON whatsapp_campaign.campaign_jobs(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_campaigns_status ON whatsapp_campaign.campaigns(status);
+

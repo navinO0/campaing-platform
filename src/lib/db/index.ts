@@ -7,6 +7,9 @@ import type {
   CustomerSegment,
   CampaignLog,
   DashboardStats,
+  Client,
+  ClientTemplate,
+  ClientReminder,
 } from "@/types";
 
 declare global {
@@ -865,4 +868,297 @@ export async function getDashboardStatsFromDb(): Promise<DashboardStats> {
     failureRate,
     optOutRate,
   };
+}
+
+// ----------------------------------------------------
+// Clients & Custom Client Templates Repository
+// ----------------------------------------------------
+
+function mapClient(row: any): Client {
+  return {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    company: row.company || undefined,
+    serviceType: row.service_type || "General Service Maintenance",
+    chargesAmount: Number(row.charges_amount) || 0,
+    dueDate: row.due_date ? new Date(row.due_date).toISOString().split("T")[0] : null,
+    notes: row.notes || undefined,
+    status: row.status || "active",
+    customTemplates: [],
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function mapClientTemplate(row: any): ClientTemplate {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    clientPhone: row.client_phone,
+    title: row.title,
+    category: row.category || "UTILITY",
+    headerText: row.header_text || undefined,
+    bodyText: row.body_text,
+    footerText: row.footer_text || undefined,
+    variables: typeof row.variables === "object" && row.variables !== null ? row.variables : {},
+    mediaType: row.media_type || "none",
+    mediaUrl: row.media_url || undefined,
+    buttons: Array.isArray(row.buttons) ? row.buttons : [],
+    lastSentAt: row.last_sent_at ? new Date(row.last_sent_at).toISOString() : null,
+    sentCount: Number(row.sent_count) || 0,
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function mapClientReminder(row: any): ClientReminder {
+  return {
+    id: String(row.id),
+    clientId: row.client_id,
+    clientTemplateId: row.client_template_id || null,
+    phone: row.phone,
+    clientName: row.client_name,
+    renderedMessage: row.rendered_message,
+    status: row.status || "sent",
+    evolutionMessageId: row.evolution_message_id || null,
+    errorMessage: row.error_message || null,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+export async function getClientsWithTemplatesFromDb(): Promise<Client[]> {
+  const clientsRes = await pool.query(
+    `SELECT * FROM whatsapp_campaign.clients ORDER BY created_at DESC;`
+  );
+  const clients = clientsRes.rows.map(mapClient);
+
+  if (clients.length === 0) return [];
+
+  const tplRes = await pool.query(
+    `SELECT * FROM whatsapp_campaign.client_templates ORDER BY created_at DESC;`
+  );
+  const templates = tplRes.rows.map(mapClientTemplate);
+
+  const tplMap = new Map<string, ClientTemplate[]>();
+  for (const tpl of templates) {
+    const list = tplMap.get(tpl.clientId) || [];
+    list.push(tpl);
+    tplMap.set(tpl.clientId, list);
+  }
+
+  return clients.map((c) => ({
+    ...c,
+    customTemplates: tplMap.get(c.id) || [],
+  }));
+}
+
+export async function getClientByIdFromDb(id: string): Promise<Client | null> {
+  const res = await pool.query(
+    `SELECT * FROM whatsapp_campaign.clients WHERE id = $1 LIMIT 1;`,
+    [id]
+  );
+  if (res.rows.length === 0) return null;
+  const client = mapClient(res.rows[0]);
+
+  const tplRes = await pool.query(
+    `SELECT * FROM whatsapp_campaign.client_templates WHERE client_id = $1 ORDER BY created_at DESC;`,
+    [id]
+  );
+  client.customTemplates = tplRes.rows.map(mapClientTemplate);
+  return client;
+}
+
+export async function createClientInDb(data: Partial<Client>): Promise<Client> {
+  const id = data.id || `cli_${Date.now()}`;
+  const query = `
+    INSERT INTO whatsapp_campaign.clients (
+      id, name, phone, company, service_type, charges_amount, due_date, notes, status, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+    ON CONFLICT (phone) DO UPDATE SET
+      name = EXCLUDED.name,
+      company = EXCLUDED.company,
+      service_type = EXCLUDED.service_type,
+      charges_amount = EXCLUDED.charges_amount,
+      due_date = EXCLUDED.due_date,
+      notes = EXCLUDED.notes,
+      status = EXCLUDED.status,
+      updated_at = NOW()
+    RETURNING *;
+  `;
+  const values = [
+    id,
+    data.name,
+    data.phone,
+    data.company || null,
+    data.serviceType || "General Service Maintenance",
+    data.chargesAmount || 0,
+    data.dueDate || null,
+    data.notes || null,
+    data.status || "active",
+  ];
+  const res = await pool.query(query, values);
+  return mapClient(res.rows[0]);
+}
+
+export async function updateClientInDb(id: string, updates: Partial<Client>): Promise<Client | null> {
+  const existing = await getClientByIdFromDb(id);
+  if (!existing) return null;
+
+  const query = `
+    UPDATE whatsapp_campaign.clients SET
+      name = $1,
+      phone = $2,
+      company = $3,
+      service_type = $4,
+      charges_amount = $5,
+      due_date = $6,
+      notes = $7,
+      status = $8,
+      updated_at = NOW()
+    WHERE id = $9
+    RETURNING *;
+  `;
+  const values = [
+    updates.name ?? existing.name,
+    updates.phone ?? existing.phone,
+    updates.company ?? existing.company ?? null,
+    updates.serviceType ?? existing.serviceType,
+    updates.chargesAmount ?? existing.chargesAmount,
+    updates.dueDate ?? existing.dueDate ?? null,
+    updates.notes ?? existing.notes ?? null,
+    updates.status ?? existing.status,
+    id,
+  ];
+  const res = await pool.query(query, values);
+  return mapClient(res.rows[0]);
+}
+
+export async function deleteClientFromDb(id: string): Promise<boolean> {
+  const res = await pool.query(`DELETE FROM whatsapp_campaign.clients WHERE id = $1;`, [id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function createClientTemplateInDb(template: Partial<ClientTemplate>): Promise<ClientTemplate> {
+  const id = template.id || `ctpl_${Date.now()}`;
+  const query = `
+    INSERT INTO whatsapp_campaign.client_templates (
+      id, client_id, client_phone, title, category,
+      header_text, body_text, footer_text, variables,
+      media_type, media_url, buttons, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET
+      title = EXCLUDED.title,
+      category = EXCLUDED.category,
+      header_text = EXCLUDED.header_text,
+      body_text = EXCLUDED.body_text,
+      footer_text = EXCLUDED.footer_text,
+      variables = EXCLUDED.variables,
+      media_type = EXCLUDED.media_type,
+      media_url = EXCLUDED.media_url,
+      buttons = EXCLUDED.buttons,
+      updated_at = NOW()
+    RETURNING *;
+  `;
+  const values = [
+    id,
+    template.clientId,
+    template.clientPhone,
+    template.title,
+    template.category || "UTILITY",
+    template.headerText || null,
+    template.bodyText,
+    template.footerText || null,
+    JSON.stringify(template.variables || {}),
+    template.mediaType || "none",
+    template.mediaUrl || null,
+    JSON.stringify(template.buttons || []),
+  ];
+  const res = await pool.query(query, values);
+  return mapClientTemplate(res.rows[0]);
+}
+
+export async function updateClientTemplateInDb(id: string, updates: Partial<ClientTemplate>): Promise<ClientTemplate | null> {
+  const query = `
+    UPDATE whatsapp_campaign.client_templates SET
+      title = COALESCE($1, title),
+      header_text = $2,
+      body_text = COALESCE($3, body_text),
+      footer_text = $4,
+      variables = COALESCE($5, variables),
+      media_type = COALESCE($6, media_type),
+      media_url = $7,
+      buttons = COALESCE($8, buttons),
+      updated_at = NOW()
+    WHERE id = $9
+    RETURNING *;
+  `;
+  const values = [
+    updates.title,
+    updates.headerText || null,
+    updates.bodyText,
+    updates.footerText || null,
+    updates.variables ? JSON.stringify(updates.variables) : null,
+    updates.mediaType,
+    updates.mediaUrl || null,
+    updates.buttons ? JSON.stringify(updates.buttons) : null,
+    id,
+  ];
+  const res = await pool.query(query, values);
+  if (res.rows.length === 0) return null;
+  return mapClientTemplate(res.rows[0]);
+}
+
+export async function deleteClientTemplateFromDb(id: string): Promise<boolean> {
+  const res = await pool.query(`DELETE FROM whatsapp_campaign.client_templates WHERE id = $1;`, [id]);
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function recordClientReminderInDb(reminder: {
+  clientId: string;
+  clientTemplateId?: string | null;
+  phone: string;
+  clientName: string;
+  renderedMessage: string;
+  status: string;
+  evolutionMessageId?: string | null;
+  errorMessage?: string | null;
+}): Promise<ClientReminder> {
+  const query = `
+    INSERT INTO whatsapp_campaign.client_reminders (
+      client_id, client_template_id, phone, client_name, rendered_message, status, evolution_message_id, error_message, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+    RETURNING *;
+  `;
+  const values = [
+    reminder.clientId,
+    reminder.clientTemplateId || null,
+    reminder.phone,
+    reminder.clientName,
+    reminder.renderedMessage,
+    reminder.status,
+    reminder.evolutionMessageId || null,
+    reminder.errorMessage || null,
+  ];
+  const res = await pool.query(query, values);
+
+  if (reminder.clientTemplateId) {
+    await pool.query(
+      `UPDATE whatsapp_campaign.client_templates
+       SET sent_count = sent_count + 1, last_sent_at = NOW(), updated_at = NOW()
+       WHERE id = $1;`,
+      [reminder.clientTemplateId]
+    );
+  }
+
+  return mapClientReminder(res.rows[0]);
+}
+
+export async function getClientRemindersFromDb(clientId?: string): Promise<ClientReminder[]> {
+  const query = clientId
+    ? `SELECT * FROM whatsapp_campaign.client_reminders WHERE client_id = $1 ORDER BY created_at DESC LIMIT 50;`
+    : `SELECT * FROM whatsapp_campaign.client_reminders ORDER BY created_at DESC LIMIT 100;`;
+  const values = clientId ? [clientId] : [];
+  const res = await pool.query(query, values);
+  return res.rows.map(mapClientReminder);
 }
