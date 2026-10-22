@@ -186,3 +186,4 @@ ON CONFLICT (id) DO UPDATE SET
   variables = EXCLUDED.variables,
   buttons = EXCLUDED.buttons,
   updated_at = NOW();
+

@@ -38,6 +38,14 @@ const envSchema = z.object({
 
   // Authentication & Security
   AUTH_SECRET: z.string().optional().default(""),
+
+  // WhatsApp Webhook & OTP Security
+  WEBHOOK_VERIFY_TOKEN: z.string().default("whatsapp_verify_token_2026"),
+  OTP_EXPIRY_SECONDS: z.coerce.number().default(300),
+  OTP_MAX_ATTEMPTS: z.coerce.number().default(3),
+  OTP_COOLDOWN_SECONDS: z.coerce.number().default(60),
+  OTP_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().default(900),
+  OTP_RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(5),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

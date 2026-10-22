@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ChevronDown,
   UserCheck,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import React, { useState } from "react";
@@ -215,6 +216,19 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
             >
               <BarChart3 className="h-4 w-4" />
               Analytics
+            </Link>
+            <Link
+              href="/otp"
+              onClick={onCloseMobile}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                isActive("/otp")
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                  : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+              )}
+            >
+              <KeyRound className="h-4 w-4" />
+              OTP & Webhooks
             </Link>
             <Link
               href="/settings"

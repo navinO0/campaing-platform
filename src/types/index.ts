@@ -240,3 +240,28 @@ export interface ClientReminder {
   errorMessage?: string | null;
   createdAt: string;
 }
+
+export interface OtpVerification {
+  id: string;
+  phone: string;
+  status: "pending" | "verified" | "expired" | "max_attempts_exceeded" | "superseded";
+  purpose: string;
+  attempts: number;
+  maxAttempts: number;
+  expiresAt: string;
+  verifiedAt?: string | null;
+  evolutionMessageId?: string | null;
+  deliveryStatus: "queued" | "sent" | "delivered" | "read" | "failed";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookLog {
+  id: string;
+  eventType: string;
+  source: string;
+  payload: Record<string, unknown>;
+  processed: boolean;
+  errorMessage?: string | null;
+  createdAt: string;
+}

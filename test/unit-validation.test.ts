@@ -5,7 +5,15 @@ import {
   buildTrackingUrl,
   templateSchema,
 } from "@/lib/validation";
-import { maskPhoneNumber, generateHmacSignature } from "@/lib/security";
+import {
+  maskPhoneNumber,
+  generateHmacSignature,
+  generateSecureOtp,
+  generateSalt,
+  hashOtp,
+  verifyOtpHash,
+  verifyWebhookSignature,
+} from "@/lib/security";
 
 describe("Validation and Utility Unit Tests", () => {
   it("validates enterprise templates with headers, footers, and example values", () => {
@@ -89,5 +97,39 @@ describe("Validation and Utility Unit Tests", () => {
     const signature = generateHmacSignature(payload, "secret123");
     expect(signature).toBeDefined();
     expect(signature.length).toBe(64); // SHA-256 hex length
+  });
+
+  it("generates cryptographically secure 6-digit numeric OTPs", () => {
+    const code = generateSecureOtp(6);
+    expect(code).toMatch(/^\d{6}$/);
+    const num = parseInt(code, 10);
+    expect(num).toBeGreaterThanOrEqual(100000);
+    expect(num).toBeLessThanOrEqual(999999);
+  });
+
+  it("hashes OTP with salt and verifies code correctly using timing-safe comparison", () => {
+    const code = "849201";
+    const salt = generateSalt(16);
+    const hash = hashOtp(code, salt);
+
+    expect(hash).toBeDefined();
+    expect(hash.length).toBe(64); // SHA-256 hex
+
+    // Valid code verification
+    expect(verifyOtpHash(code, salt, hash)).toBe(true);
+
+    // Invalid code verification
+    expect(verifyOtpHash("000000", salt, hash)).toBe(false);
+    expect(verifyOtpHash("849202", salt, hash)).toBe(false);
+  });
+
+  it("verifies webhook signatures with and without sha256= prefix", () => {
+    const payload = JSON.stringify({ event: "message.status", status: "delivered" });
+    const secret = "whsec_supersecret_key";
+    const signature = generateHmacSignature(payload, secret);
+
+    expect(verifyWebhookSignature(payload, signature, secret)).toBe(true);
+    expect(verifyWebhookSignature(payload, `sha256=${signature}`, secret)).toBe(true);
+    expect(verifyWebhookSignature(payload, "invalid_sig_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", secret)).toBe(false);
   });
 });

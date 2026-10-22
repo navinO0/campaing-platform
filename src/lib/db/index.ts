@@ -10,6 +10,8 @@ import type {
   Client,
   ClientTemplate,
   ClientReminder,
+  OtpVerification,
+  WebhookLog,
 } from "@/types";
 
 declare global {
@@ -1161,4 +1163,262 @@ export async function getClientRemindersFromDb(clientId?: string): Promise<Clien
   const values = clientId ? [clientId] : [];
   const res = await pool.query(query, values);
   return res.rows.map(mapClientReminder);
+}
+
+// ----------------------------------------------------
+// OTP Service & Webhook Auditing Repository
+// ----------------------------------------------------
+
+function mapOtp(row: any): OtpVerification {
+  return {
+    id: row.id,
+    phone: row.phone,
+    status: row.status,
+    purpose: row.purpose || "authentication",
+    attempts: Number(row.attempts) || 0,
+    maxAttempts: Number(row.max_attempts) || 3,
+    expiresAt: new Date(row.expires_at).toISOString(),
+    verifiedAt: row.verified_at ? new Date(row.verified_at).toISOString() : null,
+    evolutionMessageId: row.evolution_message_id || null,
+    deliveryStatus: row.delivery_status || "queued",
+    createdAt: new Date(row.created_at).toISOString(),
+    updatedAt: new Date(row.updated_at).toISOString(),
+  };
+}
+
+function mapWebhookLog(row: any): WebhookLog {
+  return {
+    id: String(row.id),
+    eventType: row.event_type,
+    source: row.source || "evolution",
+    payload: typeof row.payload === "object" && row.payload !== null ? row.payload : {},
+    processed: Boolean(row.processed),
+    errorMessage: row.error_message || null,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+
+export async function createOtpVerificationInDb(params: {
+  id?: string;
+  phone: string;
+  otpHash: string;
+  salt: string;
+  expiresAt: Date;
+  purpose?: string;
+  maxAttempts?: number;
+  evolutionMessageId?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}): Promise<OtpVerification> {
+  const id = params.id || `otp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const query = `
+    INSERT INTO whatsapp_campaign.otp_verifications (
+      id, phone, otp_hash, salt, status, purpose,
+      attempts, max_attempts, expires_at, evolution_message_id,
+      ip_address, user_agent, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, 'pending', $5, 0, $6, $7, $8, $9, $10, NOW(), NOW())
+    RETURNING *;
+  `;
+  const values = [
+    id,
+    params.phone,
+    params.otpHash,
+    params.salt,
+    params.purpose || "authentication",
+    params.maxAttempts || env.OTP_MAX_ATTEMPTS || 3,
+    params.expiresAt,
+    params.evolutionMessageId || null,
+    params.ipAddress || null,
+    params.userAgent || null,
+  ];
+  const res = await pool.query(query, values);
+  return mapOtp(res.rows[0]);
+}
+
+export async function getLatestActiveOtpByPhone(
+  phone: string,
+  purpose: string = "authentication"
+): Promise<{ verification: OtpVerification; otpHash: string; salt: string } | null> {
+  const res = await pool.query(
+    `SELECT * FROM whatsapp_campaign.otp_verifications
+     WHERE phone = $1 AND purpose = $2 AND status = 'pending'
+     ORDER BY created_at DESC LIMIT 1;`,
+    [phone, purpose]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    verification: mapOtp(row),
+    otpHash: row.otp_hash,
+    salt: row.salt,
+  };
+}
+
+export async function getOtpVerificationById(
+  id: string
+): Promise<{ verification: OtpVerification; otpHash: string; salt: string } | null> {
+  const res = await pool.query(
+    `SELECT * FROM whatsapp_campaign.otp_verifications WHERE id = $1 LIMIT 1;`,
+    [id]
+  );
+  if (res.rows.length === 0) return null;
+  const row = res.rows[0];
+  return {
+    verification: mapOtp(row),
+    otpHash: row.otp_hash,
+    salt: row.salt,
+  };
+}
+
+export async function incrementOtpAttempts(
+  id: string
+): Promise<{ attempts: number; maxAttempts: number; isLocked: boolean }> {
+  const res = await pool.query(
+    `UPDATE whatsapp_campaign.otp_verifications
+     SET attempts = attempts + 1,
+         status = CASE WHEN attempts + 1 >= max_attempts THEN 'max_attempts_exceeded' ELSE status END,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING attempts, max_attempts, status;`,
+    [id]
+  );
+  if (res.rows.length === 0) {
+    return { attempts: 0, maxAttempts: 3, isLocked: true };
+  }
+  const row = res.rows[0];
+  return {
+    attempts: row.attempts,
+    maxAttempts: row.max_attempts,
+    isLocked: row.status === "max_attempts_exceeded",
+  };
+}
+
+export async function markOtpVerified(id: string): Promise<OtpVerification | null> {
+  const res = await pool.query(
+    `UPDATE whatsapp_campaign.otp_verifications
+     SET status = 'verified', verified_at = NOW(), updated_at = NOW()
+     WHERE id = $1
+     RETURNING *;`,
+    [id]
+  );
+  if (res.rows.length === 0) return null;
+  return mapOtp(res.rows[0]);
+}
+
+export async function markOtpExpired(id: string): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_campaign.otp_verifications
+     SET status = 'expired', updated_at = NOW()
+     WHERE id = $1;`,
+    [id]
+  );
+}
+
+export async function markOtpSuperseded(phone: string, purpose: string = "authentication"): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_campaign.otp_verifications
+     SET status = 'superseded', updated_at = NOW()
+     WHERE phone = $1 AND purpose = $2 AND status = 'pending';`,
+    [phone, purpose]
+  );
+}
+
+export async function updateOtpDeliveryStatus(
+  evolutionMessageId: string,
+  deliveryStatus: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE whatsapp_campaign.otp_verifications
+     SET delivery_status = $1, updated_at = NOW()
+     WHERE evolution_message_id = $2;`,
+    [deliveryStatus, evolutionMessageId]
+  );
+}
+
+export async function checkOtpRateLimit(
+  phone: string,
+  windowSeconds: number = 900,
+  maxRequests: number = 5
+): Promise<{ allowed: boolean; remainingRequests: number; retryAfterSeconds: number }> {
+  // Check cooldown from last sent OTP
+  const cooldownRes = await pool.query(
+    `SELECT created_at FROM whatsapp_campaign.otp_verifications
+     WHERE phone = $1
+     ORDER BY created_at DESC LIMIT 1;`,
+    [phone]
+  );
+  if (cooldownRes.rows.length > 0) {
+    const lastCreated = new Date(cooldownRes.rows[0].created_at).getTime();
+    const elapsedSeconds = Math.floor((Date.now() - lastCreated) / 1000);
+    const cooldownPeriod = env.OTP_COOLDOWN_SECONDS || 60;
+    if (elapsedSeconds < cooldownPeriod) {
+      return {
+        allowed: false,
+        remainingRequests: 0,
+        retryAfterSeconds: cooldownPeriod - elapsedSeconds,
+      };
+    }
+  }
+
+  // Check rolling window requests count
+  const windowRes = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM whatsapp_campaign.otp_verifications
+     WHERE phone = $1 AND created_at >= NOW() - ($2 || ' seconds')::interval;`,
+    [phone, windowSeconds]
+  );
+  const count = windowRes.rows[0]?.count || 0;
+  if (count >= maxRequests) {
+    return {
+      allowed: false,
+      remainingRequests: 0,
+      retryAfterSeconds: windowSeconds,
+    };
+  }
+
+  return {
+    allowed: true,
+    remainingRequests: maxRequests - count - 1,
+    retryAfterSeconds: 0,
+  };
+}
+
+export async function getRecentOtpVerificationsFromDb(limit: number = 50): Promise<OtpVerification[]> {
+  const res = await pool.query(
+    `SELECT * FROM whatsapp_campaign.otp_verifications
+     ORDER BY created_at DESC LIMIT $1;`,
+    [limit]
+  );
+  return res.rows.map(mapOtp);
+}
+
+export async function recordWebhookLogInDb(params: {
+  eventType: string;
+  source: string;
+  payload: unknown;
+  processed?: boolean;
+  errorMessage?: string;
+}): Promise<WebhookLog> {
+  const res = await pool.query(
+    `INSERT INTO whatsapp_campaign.webhook_logs (
+      event_type, source, payload, processed, error_message, created_at
+    ) VALUES ($1, $2, $3, $4, $5, NOW())
+    RETURNING *;`,
+    [
+      params.eventType,
+      params.source || "evolution",
+      JSON.stringify(params.payload || {}),
+      params.processed ?? true,
+      params.errorMessage || null,
+    ]
+  );
+  return mapWebhookLog(res.rows[0]);
+}
+
+export async function getRecentWebhookLogsFromDb(limit: number = 50): Promise<WebhookLog[]> {
+  const res = await pool.query(
+    `SELECT * FROM whatsapp_campaign.webhook_logs
+     ORDER BY created_at DESC LIMIT $1;`,
+    [limit]
+  );
+  return res.rows.map(mapWebhookLog);
 }
