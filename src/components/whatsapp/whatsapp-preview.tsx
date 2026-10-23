@@ -59,9 +59,10 @@ export function WhatsAppPreview({
     return replaced;
   };
 
+  const isPaymentDisabled = paymentConfig && paymentConfig.enabled === false;
   const activeBanner = bannerUrl || (mediaType === "image" ? mediaUrl : undefined);
-  const activeQr = qrCodeUrl || paymentConfig?.qrCodeUrl;
-  const isPaymentEnabled = Boolean(paymentConfig?.enabled || activeQr);
+  const activeQr = !isPaymentDisabled ? (qrCodeUrl || paymentConfig?.qrCodeUrl) : undefined;
+  const isPaymentEnabled = Boolean(!isPaymentDisabled && (paymentConfig?.enabled || activeQr));
 
   return (
     <div className="flex flex-col items-center">

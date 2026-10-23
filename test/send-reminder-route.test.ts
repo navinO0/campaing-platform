@@ -89,4 +89,45 @@ describe("Send Reminder Route Handler", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("does NOT send companion QR code when payment QR is unchecked (paymentConfig.enabled = false)", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: "EVO_TEST_MSG_456" } }),
+      status: 200,
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = {
+      clientId: "client_test_456",
+      phone: "+918008638625",
+      clientName: "Naveen",
+      message: "Please find your general service update notice.",
+      bannerUrl: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80",
+      // Payment QR unchecked / disabled:
+      paymentConfig: {
+        enabled: false,
+      },
+      scheduleType: "immediate",
+    };
+
+    const req = new Request("http://localhost:3000/api/clients/send-reminder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+
+    // Verify ONLY ONE message (the banner) was dispatched, and NO companion QR
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const firstCallBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(firstCallBody.mediatype).toBe("image");
+    expect(firstCallBody.caption).not.toContain("Scan to Pay");
+
+    vi.unstubAllGlobals();
+  });
 });

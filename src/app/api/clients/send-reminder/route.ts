@@ -54,8 +54,9 @@ export async function POST(request: Request) {
       fullText = `*${headerText.trim()}*\n\n${fullText}`;
     }
 
-    // 1. Append Structured Payment Details Block if payment is enabled
-    const isPaymentEnabled = Boolean(
+    // 1. Append Structured Payment Details Block if payment is enabled (and not unchecked/disabled)
+    const isPaymentExplicitlyDisabled = paymentConfig && paymentConfig.enabled === false;
+    const isPaymentEnabled = !isPaymentExplicitlyDisabled && Boolean(
       paymentConfig?.enabled || paymentConfig?.paymentLink || paymentConfig?.upiId || qrCodeUrl
     );
 
@@ -112,13 +113,18 @@ export async function POST(request: Request) {
 
     // Determine Effective Media & QR URLs
     const primaryBannerUrl = bannerUrl || mediaUrl;
-    let effectiveQrUrl = qrCodeUrl || paymentConfig?.qrCodeUrl;
-    if (!effectiveQrUrl && paymentConfig?.enabled && paymentConfig?.upiId) {
-      const amt = parseFloat(String(paymentConfig.amount)) || 0;
-      const upiUri = `upi://pay?pa=${encodeURIComponent(paymentConfig.upiId)}&pn=${encodeURIComponent(
-        paymentConfig.payeeName || clientName || "Valued Client"
-      )}&am=${amt.toFixed(2)}&cu=INR`;
-      effectiveQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
+    let effectiveQrUrl: string | null = null;
+
+    // Only configure companion QR code if payment QR is NOT unchecked/disabled
+    if (!isPaymentExplicitlyDisabled) {
+      effectiveQrUrl = qrCodeUrl || paymentConfig?.qrCodeUrl || null;
+      if (!effectiveQrUrl && paymentConfig?.enabled && paymentConfig?.upiId) {
+        const amt = parseFloat(String(paymentConfig.amount)) || 0;
+        const upiUri = `upi://pay?pa=${encodeURIComponent(paymentConfig.upiId)}&pn=${encodeURIComponent(
+          paymentConfig.payeeName || clientName || "Valued Client"
+        )}&am=${amt.toFixed(2)}&cu=INR`;
+        effectiveQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
+      }
     }
 
     // If recurring or scheduled in the future:

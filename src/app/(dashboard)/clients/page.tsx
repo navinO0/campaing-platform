@@ -127,6 +127,7 @@ export default function ClientsPage() {
   const [reminderClient, setReminderClient] = useState<Client | null>(null);
   const [selectedClientTemplate, setSelectedClientTemplate] = useState<ClientTemplate | null>(null);
   const [customReminderMessage, setCustomReminderMessage] = useState("");
+  const [reminderIncludeQr, setReminderIncludeQr] = useState(true);
   const [isSending, setIsSending] = useState(false);
 
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -486,6 +487,7 @@ export default function ClientsPage() {
     setReminderClient(client);
     const chosenTpl = template || client.customTemplates?.[0] || null;
     setSelectedClientTemplate(chosenTpl);
+    setReminderIncludeQr(chosenTpl?.paymentConfig?.enabled ?? true);
 
     // Initialize schedule controls
     setScheduleType("immediate");
@@ -552,16 +554,23 @@ export default function ClientsPage() {
       const defaultAmount = reminderClient.chargesAmount || 1499;
       const defaultQr = generateUpiQr(defaultUpi, reminderClient.company || reminderClient.name, String(defaultAmount));
 
+      // Respect payment enabled checkbox & toggle:
+      const isPaymentActive = selectedClientTemplate?.paymentConfig?.enabled !== undefined
+        ? (selectedClientTemplate.paymentConfig.enabled && reminderIncludeQr)
+        : reminderIncludeQr;
+
       const effectiveBanner = selectedClientTemplate?.bannerUrl || BANNER_PRESETS[0].url;
-      const effectiveQr = selectedClientTemplate?.qrCodeUrl || defaultQr;
-      const effectivePaymentConfig = selectedClientTemplate?.paymentConfig || {
-        enabled: true,
-        upiId: defaultUpi,
-        payeeName: reminderClient.company || reminderClient.name,
-        amount: defaultAmount,
-        paymentLink: defaultPayLink,
-        qrCodeUrl: defaultQr,
-      };
+      const effectiveQr = isPaymentActive ? (selectedClientTemplate?.qrCodeUrl || defaultQr) : undefined;
+      const effectivePaymentConfig = isPaymentActive
+        ? (selectedClientTemplate?.paymentConfig || {
+            enabled: true,
+            upiId: defaultUpi,
+            payeeName: reminderClient.company || reminderClient.name,
+            amount: defaultAmount,
+            paymentLink: defaultPayLink,
+            qrCodeUrl: defaultQr,
+          })
+        : { enabled: false };
       const effectiveButtons = (selectedClientTemplate?.buttons && selectedClientTemplate.buttons.length > 0)
         ? selectedClientTemplate.buttons
         : [
@@ -1749,6 +1758,29 @@ export default function ClientsPage() {
             </div>
           )}
 
+          {/* Payment QR Code Toggle Checkbox */}
+          <div className="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-950/40">
+            <div className="flex items-center gap-2.5">
+              <QrCode className="h-4 w-4 text-emerald-600" />
+              <div>
+                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  Include Payment QR Code & Instant UPI Card
+                </div>
+                <div className="text-[11px] text-zinc-500">
+                  When unchecked, no companion QR image or payment links will be dispatched.
+                </div>
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={reminderIncludeQr}
+                onChange={(e) => setReminderIncludeQr(e.target.checked)}
+                className="rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+              />
+            </label>
+          </div>
+
           <div>
             <label className="text-xs font-semibold uppercase text-zinc-500">Edit / Review Message Text</label>
             <Textarea
@@ -1771,21 +1803,25 @@ export default function ClientsPage() {
                 footerText={selectedClientTemplate?.footerText || "Official Service Desk • Helpdesk: +91 98765 43210"}
                 bannerUrl={selectedClientTemplate?.bannerUrl || BANNER_PRESETS[0].url}
                 qrCodeUrl={
-                  selectedClientTemplate?.qrCodeUrl ||
-                  generateUpiQr(
-                    `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
-                    reminderClient?.name || "Client",
-                    String(reminderClient?.chargesAmount || 1499)
-                  )
+                  reminderIncludeQr
+                    ? (selectedClientTemplate?.qrCodeUrl ||
+                        generateUpiQr(
+                          `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
+                          reminderClient?.name || "Client",
+                          String(reminderClient?.chargesAmount || 1499)
+                        ))
+                    : undefined
                 }
                 paymentConfig={
-                  selectedClientTemplate?.paymentConfig || {
-                    enabled: true,
-                    upiId: `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
-                    payeeName: reminderClient?.company || reminderClient?.name || "Client",
-                    amount: reminderClient?.chargesAmount || 1499,
-                    paymentLink: `https://pay.example.com/inv/${reminderClient?.id?.slice(-4) || "0000"}`,
-                  }
+                  reminderIncludeQr
+                    ? (selectedClientTemplate?.paymentConfig || {
+                        enabled: true,
+                        upiId: `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
+                        payeeName: reminderClient?.company || reminderClient?.name || "Client",
+                        amount: reminderClient?.chargesAmount || 1499,
+                        paymentLink: `https://pay.example.com/inv/${reminderClient?.id?.slice(-4) || "0000"}`,
+                      })
+                    : { enabled: false }
                 }
                 choiceOptions={
                   selectedClientTemplate?.choiceOptions || ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"]
