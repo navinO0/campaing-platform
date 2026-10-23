@@ -130,4 +130,40 @@ describe("Send Reminder Route Handler", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("does NOT include quick reply block when choiceOptions is empty array", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ key: { id: "EVO_TEST_MSG_789" } }),
+      status: 200,
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const payload = {
+      clientId: "client_test_789",
+      phone: "+918008638625",
+      clientName: "Naveen",
+      message: "Please find your maintenance notice without choices.",
+      bannerUrl: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80",
+      choiceOptions: [], // Deleted quick replies
+      scheduleType: "immediate",
+    };
+
+    const req = new Request("http://localhost:3000/api/clients/send-reminder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+
+    const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(callBody.caption).not.toContain("QUICK RESPONSE");
+    expect(callBody.caption).not.toContain("Paid Already");
+
+    vi.unstubAllGlobals();
+  });
 });

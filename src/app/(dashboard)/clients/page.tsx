@@ -128,6 +128,8 @@ export default function ClientsPage() {
   const [selectedClientTemplate, setSelectedClientTemplate] = useState<ClientTemplate | null>(null);
   const [customReminderMessage, setCustomReminderMessage] = useState("");
   const [reminderIncludeQr, setReminderIncludeQr] = useState(true);
+  const [reminderChoiceOptions, setReminderChoiceOptions] = useState<string[]>([]);
+  const [newReminderChoiceInput, setNewReminderChoiceInput] = useState("");
   const [isSending, setIsSending] = useState(false);
 
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -353,7 +355,7 @@ export default function ClientsPage() {
           )
       );
       setTplButtons(template.buttons || []);
-      setTplChoiceOptions(template.choiceOptions || ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"]);
+      setTplChoiceOptions(Array.isArray(template.choiceOptions) ? [...template.choiceOptions] : []);
     } else {
       setEditingTemplate(null);
       setTplTitle(`Custom Maintenance Reminder for ${client.name}`);
@@ -488,6 +490,8 @@ export default function ClientsPage() {
     const chosenTpl = template || client.customTemplates?.[0] || null;
     setSelectedClientTemplate(chosenTpl);
     setReminderIncludeQr(chosenTpl?.paymentConfig?.enabled ?? true);
+    setReminderChoiceOptions(Array.isArray(chosenTpl?.choiceOptions) ? [...chosenTpl.choiceOptions] : []);
+    setNewReminderChoiceInput("");
 
     // Initialize schedule controls
     setScheduleType("immediate");
@@ -590,9 +594,7 @@ export default function ClientsPage() {
               phoneNumber: "+919876543210",
             },
           ];
-      const effectiveChoices = (selectedClientTemplate?.choiceOptions && selectedClientTemplate.choiceOptions.length > 0)
-        ? selectedClientTemplate.choiceOptions
-        : ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"];
+      const effectiveChoices = reminderChoiceOptions;
 
       const payload = {
         clientId: reminderClient.id,
@@ -1390,7 +1392,7 @@ export default function ClientsPage() {
             </div>
 
             {/* Quick Choice Presets */}
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 items-center">
               {CHOICE_PRESETS.map((p, idx) => (
                 <button
                   key={idx}
@@ -1401,6 +1403,15 @@ export default function ClientsPage() {
                   Preset: {p.name}
                 </button>
               ))}
+              {tplChoiceOptions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setTplChoiceOptions([])}
+                  className="text-[10px] px-2 py-0.5 rounded bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-100 transition-colors"
+                >
+                  Clear All
+                </button>
+              )}
             </div>
 
             {/* Editable Choice List */}
@@ -1733,6 +1744,8 @@ export default function ClientsPage() {
                   const tpl = reminderClient.customTemplates?.find((t) => t.id === e.target.value);
                   if (tpl) {
                     setSelectedClientTemplate(tpl);
+                    setReminderIncludeQr(tpl.paymentConfig?.enabled ?? true);
+                    setReminderChoiceOptions(Array.isArray(tpl.choiceOptions) ? [...tpl.choiceOptions] : []);
                     let rendered = tpl.bodyText;
                     const vars: Record<string, string> = {
                       client_name: reminderClient.name,
@@ -1784,6 +1797,85 @@ export default function ClientsPage() {
             </label>
           </div>
 
+          {/* Quick Reply (Choose One) Manager in Send Reminder Modal */}
+          <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 bg-zinc-50/70 dark:bg-zinc-950/40 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                Quick Reply Options ({reminderChoiceOptions.length})
+              </label>
+              {reminderChoiceOptions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setReminderChoiceOptions([])}
+                  className="text-[10px] text-red-600 hover:text-red-700 font-medium transition-colors"
+                >
+                  Remove All
+                </button>
+              )}
+            </div>
+
+            {/* List of active quick replies with delete button */}
+            {reminderChoiceOptions.length > 0 ? (
+              <div className="space-y-1.5">
+                {reminderChoiceOptions.map((opt, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between px-2.5 py-1.5 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-800 dark:text-zinc-200"
+                  >
+                    <span className="truncate">{idx + 1}. {opt}</span>
+                    <button
+                      type="button"
+                      onClick={() => setReminderChoiceOptions(reminderChoiceOptions.filter((_, i) => i !== idx))}
+                      className="text-zinc-400 hover:text-red-500 p-0.5 ml-2 shrink-0 transition-colors"
+                      title="Remove quick reply"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[11px] text-zinc-400 italic">
+                No quick replies attached. (The message will not contain numbered choices).
+              </div>
+            )}
+
+            {/* Add new quick reply if < 3 */}
+            {reminderChoiceOptions.length < 3 && (
+              <div className="flex items-center gap-1.5 pt-1">
+                <Input
+                  value={newReminderChoiceInput}
+                  onChange={(e) => setNewReminderChoiceInput(e.target.value)}
+                  placeholder="Add option (e.g. 💳 Pay Online Now)"
+                  className="text-xs h-7 bg-white dark:bg-zinc-900"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newReminderChoiceInput.trim()) {
+                      e.preventDefault();
+                      setReminderChoiceOptions([...reminderChoiceOptions, newReminderChoiceInput.trim()]);
+                      setNewReminderChoiceInput("");
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (newReminderChoiceInput.trim()) {
+                      setReminderChoiceOptions([...reminderChoiceOptions, newReminderChoiceInput.trim()]);
+                      setNewReminderChoiceInput("");
+                    }
+                  }}
+                  className="h-7 text-xs px-2 shrink-0 gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div>
             <label className="text-xs font-semibold uppercase text-zinc-500">Edit / Review Message Text</label>
             <Textarea
@@ -1826,9 +1918,7 @@ export default function ClientsPage() {
                       })
                     : { enabled: false }
                 }
-                choiceOptions={
-                  selectedClientTemplate?.choiceOptions || ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"]
-                }
+                choiceOptions={reminderChoiceOptions}
                 buttons={
                   selectedClientTemplate?.buttons || [
                     {
