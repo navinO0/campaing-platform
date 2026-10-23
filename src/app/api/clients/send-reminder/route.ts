@@ -41,8 +41,11 @@ export async function POST(request: Request) {
       fullText = `${fullText}\n\n_${footerText.trim()}_`;
     }
 
-    // Clean phone number for WhatsApp (remove + and spaces)
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    // Clean phone number for WhatsApp (remove + and spaces, ensure country code)
+    let cleanPhone = phone.replace(/[^0-9]/g, "");
+    if (cleanPhone.length === 10) {
+      cleanPhone = "91" + cleanPhone;
+    }
 
     // Effective media URL (banner image prioritized, then QR code, then mediaUrl)
     const effectiveMediaUrl = bannerUrl || mediaUrl || (paymentConfig?.enabled ? qrCodeUrl : undefined);
@@ -96,20 +99,19 @@ export async function POST(request: Request) {
     if (evoUrl && evoKey) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
+        const timeout = setTimeout(() => controller.abort(), 10000);
 
         const evoEndpoint = effectiveMediaUrl
           ? `${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`
           : `${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`;
 
+        // Evolution API v2: root-level fields for both sendMedia and sendText
         const evoPayload = effectiveMediaUrl
           ? {
               number: cleanPhone,
-              mediaMessage: {
-                mediatype: "image",
-                caption: fullText,
-                media: effectiveMediaUrl,
-              },
+              mediatype: "image",
+              media: effectiveMediaUrl,
+              caption: fullText,
             }
           : {
               number: cleanPhone,
@@ -132,10 +134,37 @@ export async function POST(request: Request) {
         if (res.ok) {
           const data = await res.json();
           evolutionMessageId = data.key?.id || data.id || `EVO_${Date.now()}`;
+          dispatchStatus = "sent";
         } else {
           const errData = await res.text();
           console.warn("Evolution API responded with non-200:", errData);
-          dispatchError = `Provider HTTP ${res.status}`;
+          dispatchError = `Provider HTTP ${res.status}: ${errData}`;
+
+          // If sendMedia failed, gracefully fall back to sendText so the message is never lost
+          if (effectiveMediaUrl) {
+            try {
+              const textRes = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  apikey: evoKey,
+                },
+                body: JSON.stringify({
+                  number: cleanPhone,
+                  text: fullText,
+                  linkPreview: true,
+                }),
+              });
+              if (textRes.ok) {
+                const textData = await textRes.json();
+                evolutionMessageId = textData.key?.id || textData.id || `EVO_${Date.now()}`;
+                dispatchError = null;
+                dispatchStatus = "sent";
+              }
+            } catch (fallbackErr: any) {
+              console.warn("Fallback to text message also failed:", fallbackErr.message);
+            }
+          }
         }
       } catch (evoErr: any) {
         console.warn("Could not dispatch via Evolution API directly:", evoErr.message);
@@ -163,17 +192,29 @@ export async function POST(request: Request) {
     }
 
     // 3. Record reminder dispatch log in PostgreSQL
+    const finalStatus = evolutionMessageId ? "sent" : (dispatchError ? "failed" : "sent");
     const reminderRecord = await recordClientReminderInDb({
       clientId,
       clientTemplateId,
       phone,
       clientName: clientName || "Valued Client",
       renderedMessage: fullText,
-      status: evolutionMessageId ? "sent" : (dispatchError ? "queued" : "sent"),
+      status: finalStatus,
       scheduleType: "immediate",
       evolutionMessageId,
       errorMessage: dispatchError,
     });
+
+    if (!evolutionMessageId && dispatchError) {
+      return NextResponse.json({
+        success: false,
+        error: {
+          code: "PROVIDER_ERROR",
+          message: `WhatsApp provider delivery failed: ${dispatchError}`,
+        },
+        data: reminderRecord,
+      }, { status: 400 });
+    }
 
     return NextResponse.json({
       success: true,
