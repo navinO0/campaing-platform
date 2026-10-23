@@ -546,20 +546,56 @@ export default function ClientsPage() {
             }
           : undefined;
 
+      // Smart defaults if template was not pre-saved
+      const defaultUpi = `${reminderClient.name.toLowerCase().replace(/[^a-z0-9]/g, "")}.ac@okhdfcbank`;
+      const defaultPayLink = `https://pay.example.com/inv/${reminderClient.id.slice(-4)}`;
+      const defaultAmount = reminderClient.chargesAmount || 1499;
+      const defaultQr = generateUpiQr(defaultUpi, reminderClient.company || reminderClient.name, String(defaultAmount));
+
+      const effectiveBanner = selectedClientTemplate?.bannerUrl || BANNER_PRESETS[0].url;
+      const effectiveQr = selectedClientTemplate?.qrCodeUrl || defaultQr;
+      const effectivePaymentConfig = selectedClientTemplate?.paymentConfig || {
+        enabled: true,
+        upiId: defaultUpi,
+        payeeName: reminderClient.company || reminderClient.name,
+        amount: defaultAmount,
+        paymentLink: defaultPayLink,
+        qrCodeUrl: defaultQr,
+      };
+      const effectiveButtons = (selectedClientTemplate?.buttons && selectedClientTemplate.buttons.length > 0)
+        ? selectedClientTemplate.buttons
+        : [
+            {
+              id: "b1",
+              type: "visit_website" as const,
+              text: `💳 Pay ₹${defaultAmount} Now`,
+              url: defaultPayLink,
+            },
+            {
+              id: "b2",
+              type: "call_phone" as const,
+              text: "📞 Call Helpline",
+              phoneNumber: "+919876543210",
+            },
+          ];
+      const effectiveChoices = (selectedClientTemplate?.choiceOptions && selectedClientTemplate.choiceOptions.length > 0)
+        ? selectedClientTemplate.choiceOptions
+        : ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"];
+
       const payload = {
         clientId: reminderClient.id,
         clientTemplateId: selectedClientTemplate?.id || null,
         phone: reminderClient.phone,
         clientName: reminderClient.name,
         message: customReminderMessage,
-        headerText: selectedClientTemplate?.headerText || undefined,
-        footerText: selectedClientTemplate?.footerText || undefined,
-        bannerUrl: selectedClientTemplate?.bannerUrl || undefined,
-        qrCodeUrl: selectedClientTemplate?.qrCodeUrl || undefined,
-        paymentConfig: selectedClientTemplate?.paymentConfig || undefined,
-        choiceOptions: selectedClientTemplate?.choiceOptions || undefined,
-        buttons: selectedClientTemplate?.buttons || undefined,
-        mediaUrl: selectedClientTemplate?.bannerUrl || selectedClientTemplate?.mediaUrl || undefined,
+        headerText: selectedClientTemplate?.headerText || "🛠️ Scheduled Maintenance & Charges Due",
+        footerText: selectedClientTemplate?.footerText || "Official Service Desk • Helpdesk: +91 98765 43210",
+        bannerUrl: effectiveBanner,
+        qrCodeUrl: effectiveQr,
+        paymentConfig: effectivePaymentConfig,
+        choiceOptions: effectiveChoices,
+        buttons: effectiveButtons,
+        mediaUrl: effectiveBanner,
         scheduleType,
         scheduledAt: scheduleType === "scheduled" ? scheduledAt : undefined,
         recurringRule,
@@ -1730,14 +1766,46 @@ export default function ClientsPage() {
             </div>
             <div className="max-w-md mx-auto scale-90 sm:scale-100 origin-top">
               <WhatsAppPreview
-                headerText={selectedClientTemplate?.headerText}
+                headerText={selectedClientTemplate?.headerText || "🛠️ Scheduled Maintenance & Charges Due"}
                 bodyText={customReminderMessage}
-                footerText={selectedClientTemplate?.footerText}
-                bannerUrl={selectedClientTemplate?.bannerUrl}
-                qrCodeUrl={selectedClientTemplate?.qrCodeUrl}
-                paymentConfig={selectedClientTemplate?.paymentConfig}
-                choiceOptions={selectedClientTemplate?.choiceOptions}
-                buttons={selectedClientTemplate?.buttons}
+                footerText={selectedClientTemplate?.footerText || "Official Service Desk • Helpdesk: +91 98765 43210"}
+                bannerUrl={selectedClientTemplate?.bannerUrl || BANNER_PRESETS[0].url}
+                qrCodeUrl={
+                  selectedClientTemplate?.qrCodeUrl ||
+                  generateUpiQr(
+                    `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
+                    reminderClient?.name || "Client",
+                    String(reminderClient?.chargesAmount || 1499)
+                  )
+                }
+                paymentConfig={
+                  selectedClientTemplate?.paymentConfig || {
+                    enabled: true,
+                    upiId: `${reminderClient?.name?.toLowerCase().replace(/[^a-z0-9]/g, "") || "client"}.ac@okhdfcbank`,
+                    payeeName: reminderClient?.company || reminderClient?.name || "Client",
+                    amount: reminderClient?.chargesAmount || 1499,
+                    paymentLink: `https://pay.example.com/inv/${reminderClient?.id?.slice(-4) || "0000"}`,
+                  }
+                }
+                choiceOptions={
+                  selectedClientTemplate?.choiceOptions || ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"]
+                }
+                buttons={
+                  selectedClientTemplate?.buttons || [
+                    {
+                      id: "b1",
+                      type: "visit_website",
+                      text: `💳 Pay ₹${reminderClient?.chargesAmount || 1499} Now`,
+                      url: `https://pay.example.com/inv/${reminderClient?.id?.slice(-4) || "0000"}`,
+                    },
+                    {
+                      id: "b2",
+                      type: "call_phone",
+                      text: "📞 Call Helpline",
+                      phoneNumber: "+919876543210",
+                    },
+                  ]
+                }
                 senderName="Official Service Desk"
               />
             </div>

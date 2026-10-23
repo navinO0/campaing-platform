@@ -197,4 +197,34 @@ describe("Validation and Utility Unit Tests", () => {
       expect(parsed.data.schedule.recurring?.sendWithinBusinessHours).toBe(true);
     }
   });
+
+  it("verifies formatted reminder text contains payment links, action buttons, and quick choices", () => {
+    const rawMessage = "Your service maintenance charges are pending.";
+    const header = "🛠️ Service Desk Notice";
+    const footer = "Helpdesk: +91 98765 43210";
+    const paymentConfig = {
+      enabled: true,
+      amount: 1499,
+      upiId: "merchant.ac@okhdfcbank",
+      paymentLink: "https://pay.example.com/inv/1234",
+    };
+    const buttons = [
+      { id: "b1", type: "visit_website" as const, text: "💳 Pay ₹1499 Now", url: "https://pay.example.com/inv/1234" },
+      { id: "b2", type: "call_phone" as const, text: "📞 Call Helpline", phoneNumber: "+919876543210" },
+    ];
+    const choices = ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"];
+
+    // Format text
+    let fullText = `*${header}*\n\n${rawMessage}`;
+    fullText += `\n\n💳 *Payment Details:*\n• *Amount Due:* ₹1,499.00\n• *UPI ID:* \`${paymentConfig.upiId}\` _(Tap to copy)_\n• *Pay Online Link:*\n${paymentConfig.paymentLink}`;
+    fullText += `\n\n⚡ *Quick Actions:*\n🔗 *Pay ₹1499 Now:*\n${buttons[0].url}\n📞 *Call Helpline:* ${buttons[1].phoneNumber}`;
+    fullText += `\n\n🔘 *Quick Options (Reply with number):*\n1️⃣ ${choices[0]}\n2️⃣ ${choices[1]}\n3️⃣ ${choices[2]}`;
+    fullText += `\n\n_${footer}_`;
+
+    expect(fullText).toContain("https://pay.example.com/inv/1234");
+    expect(fullText).toContain("merchant.ac@okhdfcbank");
+    expect(fullText).toContain("Pay ₹1499 Now");
+    expect(fullText).toContain("1️⃣ ✅ Paid Already");
+    expect(fullText).toContain("_Helpdesk: +91 98765 43210_");
+  });
 });

@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
-import { recordClientReminderInDb, getClientByIdFromDb, updateClientInDb } from "@/lib/db";
+import { recordClientReminderInDb, updateClientInDb } from "@/lib/db";
 import { env } from "@/config/env";
 import { forwardToN8n } from "@/lib/api/n8n-client";
+
+// Clean media data URL or ensure clean base64 / URL for Evolution API
+function sanitizeMedia(mediaStr: string): string {
+  if (!mediaStr) return "";
+  const trimmed = mediaStr.trim();
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, "");
+  }
+  return trimmed;
+}
 
 export async function POST(request: Request) {
   try {
@@ -32,29 +42,89 @@ export async function POST(request: Request) {
       );
     }
 
-    // Compose formatted text if header or footer provided
-    let fullText = message;
-    if (headerText) {
-      fullText = `*${headerText.trim()}*\n\n${fullText}`;
-    }
-    if (footerText) {
-      fullText = `${fullText}\n\n_${footerText.trim()}_`;
-    }
-
     // Clean phone number for WhatsApp (remove + and spaces, ensure country code)
     let cleanPhone = phone.replace(/[^0-9]/g, "");
     if (cleanPhone.length === 10) {
       cleanPhone = "91" + cleanPhone;
     }
 
-    // Effective media URL (banner image prioritized, then QR code, then mediaUrl)
-    const effectiveMediaUrl = bannerUrl || mediaUrl || (paymentConfig?.enabled ? qrCodeUrl : undefined);
+    // Compose formatted text
+    let fullText = message;
+    if (headerText) {
+      fullText = `*${headerText.trim()}*\n\n${fullText}`;
+    }
+
+    // 1. Append Structured Payment Details Block if payment is enabled
+    const isPaymentEnabled = Boolean(
+      paymentConfig?.enabled || paymentConfig?.paymentLink || paymentConfig?.upiId || qrCodeUrl
+    );
+
+    if (isPaymentEnabled) {
+      const payLines: string[] = ["\n💳 *Payment Details:*"];
+      if (paymentConfig?.amount) {
+        const amtStr = Number(paymentConfig.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+        payLines.push(`• *Amount Due:* ₹${amtStr}`);
+      }
+      if (paymentConfig?.upiId) {
+        payLines.push(`• *UPI ID:* \`${paymentConfig.upiId}\` _(Tap to copy)_`);
+      }
+      if (paymentConfig?.paymentLink) {
+        payLines.push(`• *Pay Online Link:*\n${paymentConfig.paymentLink}`);
+      }
+      fullText = `${fullText}\n${payLines.join("\n")}`;
+    }
+
+    // 2. Append Action Buttons & Links Block (Direct payment links, call phone, coupon)
+    if (Array.isArray(buttons) && buttons.length > 0) {
+      const btnLines: string[] = ["\n⚡ *Quick Actions:*"];
+      for (const btn of buttons) {
+        if (!btn) continue;
+        if (btn.type === "visit_website" && btn.url) {
+          btnLines.push(`🔗 *${btn.text || "Pay Online"}:*\n${btn.url}`);
+        } else if (btn.type === "call_phone" && btn.phoneNumber) {
+          btnLines.push(`📞 *${btn.text || "Helpline"}:* ${btn.phoneNumber}`);
+        } else if (btn.type === "copy_coupon" && (btn.url || btn.text)) {
+          btnLines.push(`🏷️ *${btn.text}:* \`${btn.url || ""}\``);
+        } else if (btn.url) {
+          btnLines.push(`🔗 *${btn.text || "Action Link"}:*\n${btn.url}`);
+        }
+      }
+      if (btnLines.length > 1) {
+        fullText = `${fullText}\n${btnLines.join("\n")}`;
+      }
+    }
+
+    // 3. Append Choice Options (Quick Reply Menu)
+    if (Array.isArray(choiceOptions) && choiceOptions.length > 0) {
+      const numEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
+      const choiceLines: string[] = ["\n🔘 *Quick Options (Reply with number):*"];
+      choiceOptions.forEach((opt: string, i: number) => {
+        const emoji = numEmojis[i] || `${i + 1}.`;
+        choiceLines.push(`${emoji} ${opt}`);
+      });
+      fullText = `${fullText}\n${choiceLines.join("\n")}`;
+    }
+
+    // 4. Append Footer
+    if (footerText) {
+      fullText = `${fullText}\n\n_${footerText.trim()}_`;
+    }
+
+    // Determine Effective Media & QR URLs
+    const primaryBannerUrl = bannerUrl || mediaUrl;
+    let effectiveQrUrl = qrCodeUrl || paymentConfig?.qrCodeUrl;
+    if (!effectiveQrUrl && paymentConfig?.enabled && paymentConfig?.upiId) {
+      const amt = parseFloat(String(paymentConfig.amount)) || 0;
+      const upiUri = `upi://pay?pa=${encodeURIComponent(paymentConfig.upiId)}&pn=${encodeURIComponent(
+        paymentConfig.payeeName || clientName || "Valued Client"
+      )}&am=${amt.toFixed(2)}&cu=INR`;
+      effectiveQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(upiUri)}`;
+    }
 
     // If recurring or scheduled in the future:
     if (scheduleType === "scheduled" || scheduleType === "recurring") {
       const nextRun = scheduledAt ? new Date(scheduledAt).toISOString() : new Date(Date.now() + 86400000).toISOString();
 
-      // Save schedule on client record
       await updateClientInDb(clientId, {
         reminderSchedule: {
           type: scheduleType,
@@ -63,7 +133,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // Record scheduled reminder entry
       const reminderRecord = await recordClientReminderInDb({
         clientId,
         clientTemplateId,
@@ -86,12 +155,11 @@ export async function POST(request: Request) {
       });
     }
 
-    // Otherwise: Immediate Dispatch
+    // Otherwise: Immediate Dispatch via Evolution API
     let evolutionMessageId: string | null = null;
     let dispatchStatus = "sent";
     let dispatchError: string | null = null;
 
-    // 1. Attempt direct dispatch via Evolution API if configured
     const evoUrl = (env.EVOLUTION_API_URL || "").replace(/\/+$/, "");
     const evoKey = env.EVOLUTION_API_KEY;
     const evoInstance = env.EVOLUTION_INSTANCE_NAME || "Default";
@@ -99,73 +167,179 @@ export async function POST(request: Request) {
     if (evoUrl && evoKey) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
+        const timeout = setTimeout(() => controller.abort(), 15000);
 
-        const evoEndpoint = effectiveMediaUrl
-          ? `${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`
-          : `${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`;
+        // Scenario A: Primary Banner Image is present
+        if (primaryBannerUrl) {
+          const sanitizedBanner = sanitizeMedia(primaryBannerUrl);
+          const evoMediaEndpoint = `${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`;
 
-        // Evolution API v2: root-level fields for both sendMedia and sendText
-        const evoPayload = effectiveMediaUrl
-          ? {
+          const bannerRes = await fetch(evoMediaEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: evoKey,
+            },
+            body: JSON.stringify({
               number: cleanPhone,
               mediatype: "image",
-              media: effectiveMediaUrl,
+              media: sanitizedBanner,
               caption: fullText,
-            }
-          : {
-              number: cleanPhone,
-              text: fullText,
-              linkPreview: true,
-            };
+            }),
+            signal: controller.signal,
+          });
 
-        const res = await fetch(evoEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: evoKey,
-          },
-          body: JSON.stringify(evoPayload),
-          signal: controller.signal,
-        });
+          if (bannerRes.ok) {
+            const data = await bannerRes.json();
+            evolutionMessageId = data.key?.id || data.id || `EVO_${Date.now()}`;
+            dispatchStatus = "sent";
 
-        clearTimeout(timeout);
+            // If Payment QR is also enabled, send the Payment QR Code as a companion image
+            if (effectiveQrUrl) {
+              try {
+                const sanitizedQr = sanitizeMedia(effectiveQrUrl);
+                const qrCaption = [
+                  `📱 *Scan to Pay ₹${paymentConfig?.amount ? Number(paymentConfig.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : ""}*`,
+                  paymentConfig?.upiId ? `• UPI ID: \`${paymentConfig.upiId}\`` : "",
+                  `• Instant UPI Pay via GPay, PhonePe, Paytm, BHIM`,
+                  paymentConfig?.paymentLink ? `• Direct Pay Link:\n${paymentConfig.paymentLink}` : "",
+                ].filter(Boolean).join("\n");
 
-        if (res.ok) {
-          const data = await res.json();
-          evolutionMessageId = data.key?.id || data.id || `EVO_${Date.now()}`;
-          dispatchStatus = "sent";
-        } else {
-          const errData = await res.text();
-          console.warn("Evolution API responded with non-200:", errData);
-          dispatchError = `Provider HTTP ${res.status}: ${errData}`;
-
-          // If sendMedia failed, gracefully fall back to sendText so the message is never lost
-          if (effectiveMediaUrl) {
-            try {
-              const textRes = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  apikey: evoKey,
-                },
-                body: JSON.stringify({
-                  number: cleanPhone,
-                  text: fullText,
-                  linkPreview: true,
-                }),
-              });
-              if (textRes.ok) {
-                const textData = await textRes.json();
-                evolutionMessageId = textData.key?.id || textData.id || `EVO_${Date.now()}`;
-                dispatchError = null;
-                dispatchStatus = "sent";
+                await fetch(evoMediaEndpoint, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    apikey: evoKey,
+                  },
+                  body: JSON.stringify({
+                    number: cleanPhone,
+                    mediatype: "image",
+                    media: sanitizedQr,
+                    caption: qrCaption,
+                  }),
+                });
+              } catch (qrErr: any) {
+                console.warn("Could not dispatch companion QR image:", qrErr.message);
               }
-            } catch (fallbackErr: any) {
-              console.warn("Fallback to text message also failed:", fallbackErr.message);
+            }
+          } else {
+            const errData = await bannerRes.text();
+            console.warn("Primary banner dispatch failed, falling back to text:", errData);
+
+            // Fallback to text message so reminder is never lost
+            const textRes = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                apikey: evoKey,
+              },
+              body: JSON.stringify({
+                number: cleanPhone,
+                text: fullText,
+                linkPreview: true,
+              }),
+            });
+
+            if (textRes.ok) {
+              const textData = await textRes.json();
+              evolutionMessageId = textData.key?.id || textData.id || `EVO_${Date.now()}`;
+              dispatchError = null;
+              dispatchStatus = "sent";
+
+              // Attempt companion QR even if banner failed
+              if (effectiveQrUrl) {
+                try {
+                  const sanitizedQr = sanitizeMedia(effectiveQrUrl);
+                  await fetch(`${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", apikey: evoKey },
+                    body: JSON.stringify({
+                      number: cleanPhone,
+                      mediatype: "image",
+                      media: sanitizedQr,
+                      caption: `📱 *Scan to Pay* via UPI ID: ${paymentConfig?.upiId || ""}`,
+                    }),
+                  });
+                } catch {}
+              }
+            } else {
+              dispatchError = `Provider HTTP ${bannerRes.status}: ${errData}`;
             }
           }
         }
+        // Scenario B: No banner, but Payment QR code is present -> send QR as main media
+        else if (effectiveQrUrl) {
+          const sanitizedQr = sanitizeMedia(effectiveQrUrl);
+          const evoMediaEndpoint = `${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`;
+
+          const qrRes = await fetch(evoMediaEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: evoKey,
+            },
+            body: JSON.stringify({
+              number: cleanPhone,
+              mediatype: "image",
+              media: sanitizedQr,
+              caption: fullText,
+            }),
+            signal: controller.signal,
+          });
+
+          if (qrRes.ok) {
+            const data = await qrRes.json();
+            evolutionMessageId = data.key?.id || data.id || `EVO_${Date.now()}`;
+            dispatchStatus = "sent";
+          } else {
+            const errData = await qrRes.text();
+            console.warn("QR dispatch failed, falling back to text:", errData);
+            const textRes = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", apikey: evoKey },
+              body: JSON.stringify({
+                number: cleanPhone,
+                text: fullText,
+                linkPreview: true,
+              }),
+            });
+            if (textRes.ok) {
+              const textData = await textRes.json();
+              evolutionMessageId = textData.key?.id || textData.id || `EVO_${Date.now()}`;
+              dispatchError = null;
+              dispatchStatus = "sent";
+            } else {
+              dispatchError = `Provider HTTP ${qrRes.status}: ${errData}`;
+            }
+          }
+        }
+        // Scenario C: Plain Text
+        else {
+          const textRes = await fetch(`${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: evoKey,
+            },
+            body: JSON.stringify({
+              number: cleanPhone,
+              text: fullText,
+              linkPreview: true,
+            }),
+            signal: controller.signal,
+          });
+
+          if (textRes.ok) {
+            const data = await textRes.json();
+            evolutionMessageId = data.key?.id || data.id || `EVO_${Date.now()}`;
+            dispatchStatus = "sent";
+          } else {
+            const errData = await textRes.text();
+            dispatchError = `Provider HTTP ${textRes.status}: ${errData}`;
+          }
+        }
+
+        clearTimeout(timeout);
       } catch (evoErr: any) {
         console.warn("Could not dispatch via Evolution API directly:", evoErr.message);
         dispatchError = evoErr.message;
@@ -183,7 +357,7 @@ export async function POST(request: Request) {
           message: fullText,
           templateId: clientTemplateId,
           bannerUrl,
-          qrCodeUrl,
+          qrCodeUrl: effectiveQrUrl,
           paymentConfig,
           choiceOptions,
           buttons,
