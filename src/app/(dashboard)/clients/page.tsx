@@ -358,9 +358,9 @@ export default function ClientsPage() {
       setEditingTemplate(null);
       setTplTitle(`Custom Maintenance Reminder for ${client.name}`);
       setTplCategory("UTILITY");
-      setTplHeader("🛠️ Scheduled Maintenance & Charges Due");
+      setTplHeader("🛠️ OFFICIAL SERVICE & CHARGES NOTICE");
       setTplBody(
-        `Dear {{client_name}},\n\nThis is a personalized reminder from our service desk regarding the scheduled maintenance for your {{service_type}}.\n\n📋 *Account Details:*\n• Client: {{client_name}}\n• Mobile: {{client_phone}}\n• Service Asset: {{service_type}}\n• Outstanding Charges: ₹{{charges_amount}}\n• Payment Due Date: {{due_date}}\n\n💳 *Pay securely online or scan QR below:*\n{{payment_link}}\n\n⚠️ *Note:* If you have already completed this payment, please disregard this notice with our sincere appreciation.\n\nFor queries or rescheduling, reply directly or choose an option below.`
+        `Dear *{{client_name}}*,\n\nThis is an official communication regarding scheduled maintenance and service charges for your *{{service_type}}*.\n\n📋 *ACCOUNT & SERVICE SUMMARY:*\n▫️ *Client Name:* {{client_name}}\n▫️ *Registered Mobile:* {{client_phone}}\n▫️ *Service Category:* {{service_type}}\n▫️ *Payment Due Date:* {{due_date}}\n▫️ *Outstanding Due:* *₹{{charges_amount}}*\n\n⚠️ *Disclaimer:* If this invoice has already been cleared, please disregard this notice with our sincere appreciation.`
       );
       setTplFooter("Official Service Desk • Helpdesk: +91 98765 43210");
       setTplMediaType("image");
@@ -520,8 +520,11 @@ export default function ClientsPage() {
       });
       setCustomReminderMessage(rendered);
     } else {
+      const amtFormatted = Number(client.chargesAmount || 1499).toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+      });
       setCustomReminderMessage(
-        `Dear ${client.name},\n\nThis is a gentle reminder regarding scheduled maintenance for ${client.serviceType}. Outstanding charges: ₹${client.chargesAmount}, due on ${client.dueDate || "N/A"}.\n\n⚠️ Note: If you have already paid this invoice, please ignore this message.\n\nThank you!`
+        `Dear *${client.name}*,\n\nWe hope you are having a productive week. This is an official service update regarding the scheduled maintenance contract for *${client.serviceType}*.\n\n📋 *ACCOUNT & SERVICE SUMMARY:*\n▫️ *Client Name:* ${client.name}\n▫️ *Service Category:* ${client.serviceType}\n▫️ *Payment Due Date:* ${client.dueDate || "On Receipt"}\n▫️ *Total Outstanding:* *₹${amtFormatted}*\n\nKindly arrange for the settlement at your earliest convenience to ensure uninterrupted service operations.\n\n⚠️ *Disclaimer:* If this invoice has already been cleared, please disregard this notice with our sincere appreciation.`
       );
     }
     setSendReminderModalOpen(true);

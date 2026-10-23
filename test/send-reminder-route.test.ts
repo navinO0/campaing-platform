@@ -85,7 +85,7 @@ describe("Send Reminder Route Handler", () => {
     expect(secondCallBody.number).toBe("918008638625");
     expect(secondCallBody.mediatype).toBe("image");
     expect(secondCallBody.media).toContain("qrserver.com");
-    expect(secondCallBody.caption).toContain("Scan to Pay");
+    expect(secondCallBody.caption).toContain("SCAN & PAY");
 
     vi.unstubAllGlobals();
   });
@@ -126,7 +126,7 @@ describe("Send Reminder Route Handler", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const firstCallBody = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(firstCallBody.mediatype).toBe("image");
-    expect(firstCallBody.caption).not.toContain("Scan to Pay");
+    expect(firstCallBody.caption).not.toContain("SCAN & PAY");
 
     vi.unstubAllGlobals();
   });

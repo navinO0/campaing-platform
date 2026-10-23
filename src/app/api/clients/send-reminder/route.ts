@@ -48,10 +48,14 @@ export async function POST(request: Request) {
       cleanPhone = "91" + cleanPhone;
     }
 
-    // Compose formatted text
-    let fullText = message;
+    // Professional formatting with clear visual hierarchy
+    const DIVIDER = "━━━━━━━━━━━━━━━━━━━━━━━━";
+    let fullText = "";
+
     if (headerText) {
-      fullText = `*${headerText.trim()}*\n\n${fullText}`;
+      fullText = `*${headerText.trim()}*\n${DIVIDER}\n\n${message.trim()}`;
+    } else {
+      fullText = message.trim();
     }
 
     // 1. Append Structured Payment Details Block if payment is enabled (and not unchecked/disabled)
@@ -61,54 +65,66 @@ export async function POST(request: Request) {
     );
 
     if (isPaymentEnabled) {
-      const payLines: string[] = ["\n💳 *Payment Details:*"];
+      const payLines: string[] = [
+        `\n\n${DIVIDER}`,
+        `💳 *SECURE PAYMENT DETAILS*`,
+        DIVIDER,
+      ];
       if (paymentConfig?.amount) {
         const amtStr = Number(paymentConfig.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-        payLines.push(`• *Amount Due:* ₹${amtStr}`);
+        payLines.push(`▫️ *Amount Due:* *₹${amtStr}*`);
       }
       if (paymentConfig?.upiId) {
-        payLines.push(`• *UPI ID:* \`${paymentConfig.upiId}\` _(Tap to copy)_`);
+        payLines.push(`▫️ *Instant UPI ID:* \`${paymentConfig.upiId}\`\n   _(Tap to copy & pay via GPay / PhonePe / Paytm)_`);
       }
       if (paymentConfig?.paymentLink) {
-        payLines.push(`• *Pay Online Link:*\n${paymentConfig.paymentLink}`);
+        payLines.push(`▫️ *Direct Pay Online:*\n   👉 ${paymentConfig.paymentLink}`);
       }
-      fullText = `${fullText}\n${payLines.join("\n")}`;
+      fullText = `${fullText}${payLines.join("\n")}`;
     }
 
     // 2. Append Action Buttons & Links Block (Direct payment links, call phone, coupon)
     if (Array.isArray(buttons) && buttons.length > 0) {
-      const btnLines: string[] = ["\n⚡ *Quick Actions:*"];
+      const btnLines: string[] = [
+        `\n\n${DIVIDER}`,
+        `⚡ *QUICK ACTIONS*`,
+        DIVIDER,
+      ];
       for (const btn of buttons) {
         if (!btn) continue;
         if (btn.type === "visit_website" && btn.url) {
-          btnLines.push(`🔗 *${btn.text || "Pay Online"}:*\n${btn.url}`);
+          btnLines.push(`🔗 *${btn.text || "Pay Online"}:*\n   👉 ${btn.url}`);
         } else if (btn.type === "call_phone" && btn.phoneNumber) {
           btnLines.push(`📞 *${btn.text || "Helpline"}:* ${btn.phoneNumber}`);
         } else if (btn.type === "copy_coupon" && (btn.url || btn.text)) {
           btnLines.push(`🏷️ *${btn.text}:* \`${btn.url || ""}\``);
         } else if (btn.url) {
-          btnLines.push(`🔗 *${btn.text || "Action Link"}:*\n${btn.url}`);
+          btnLines.push(`🔗 *${btn.text || "Action Link"}:*\n   👉 ${btn.url}`);
         }
       }
-      if (btnLines.length > 1) {
-        fullText = `${fullText}\n${btnLines.join("\n")}`;
+      if (btnLines.length > 3) {
+        fullText = `${fullText}${btnLines.join("\n")}`;
       }
     }
 
     // 3. Append Choice Options (Quick Reply Menu)
     if (Array.isArray(choiceOptions) && choiceOptions.length > 0) {
       const numEmojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-      const choiceLines: string[] = ["\n🔘 *Quick Options (Reply with number):*"];
+      const choiceLines: string[] = [
+        `\n\n${DIVIDER}`,
+        `🔘 *QUICK REPLY (Reply with number)*`,
+        DIVIDER,
+      ];
       choiceOptions.forEach((opt: string, i: number) => {
         const emoji = numEmojis[i] || `${i + 1}.`;
         choiceLines.push(`${emoji} ${opt}`);
       });
-      fullText = `${fullText}\n${choiceLines.join("\n")}`;
+      fullText = `${fullText}${choiceLines.join("\n")}`;
     }
 
     // 4. Append Footer
     if (footerText) {
-      fullText = `${fullText}\n\n_${footerText.trim()}_`;
+      fullText = `${fullText}\n\n${DIVIDER}\n_${footerText.trim()}_`;
     }
 
     // Determine Effective Media & QR URLs
@@ -204,11 +220,19 @@ export async function POST(request: Request) {
             if (effectiveQrUrl) {
               try {
                 const sanitizedQr = sanitizeMedia(effectiveQrUrl);
+                const amtFormatted = paymentConfig?.amount
+                  ? `₹${Number(paymentConfig.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
+                  : "";
                 const qrCaption = [
-                  `📱 *Scan to Pay ₹${paymentConfig?.amount ? Number(paymentConfig.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : ""}*`,
-                  paymentConfig?.upiId ? `• UPI ID: \`${paymentConfig.upiId}\`` : "",
-                  `• Instant UPI Pay via GPay, PhonePe, Paytm, BHIM`,
-                  paymentConfig?.paymentLink ? `• Direct Pay Link:\n${paymentConfig.paymentLink}` : "",
+                  `📱 *SCAN & PAY VIA ANY UPI APP*`,
+                  DIVIDER,
+                  amtFormatted ? `▫️ *Amount Payable:* *${amtFormatted}*` : "",
+                  paymentConfig?.upiId ? `▫️ *Instant UPI ID:* \`${paymentConfig.upiId}\` _(Tap to copy)_` : "",
+                  paymentConfig?.payeeName ? `▫️ *Payee:* ${paymentConfig.payeeName}` : "",
+                  `▫️ *Supported:* GPay • PhonePe • Paytm • BHIM • Cred`,
+                  paymentConfig?.paymentLink ? `▫️ *Online Link:*\n   👉 ${paymentConfig.paymentLink}` : "",
+                  DIVIDER,
+                  `_Scan this QR code with any mobile UPI payment app to settle instantly._`,
                 ].filter(Boolean).join("\n");
 
                 await fetch(evoMediaEndpoint, {
