@@ -77,7 +77,7 @@ describe("Send Reminder Route Handler", () => {
     expect(firstCallBody.caption).toContain("https://pay.example.com/inv/8625");
     expect(firstCallBody.caption).toContain("naveen.ac@okhdfcbank");
     expect(firstCallBody.caption).toContain("Pay ₹1499 Now");
-    expect(firstCallBody.caption).toContain("1️⃣ ✅ Paid Already");
+    expect(firstCallBody.caption).toContain("1. ✅ Paid Already");
 
     // Verify companion QR code was dispatched as the second call
     expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);

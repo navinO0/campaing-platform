@@ -358,9 +358,9 @@ export default function ClientsPage() {
       setEditingTemplate(null);
       setTplTitle(`Custom Maintenance Reminder for ${client.name}`);
       setTplCategory("UTILITY");
-      setTplHeader("🛠️ OFFICIAL SERVICE & CHARGES NOTICE");
+      setTplHeader("🛠️ SERVICE & CHARGES NOTICE");
       setTplBody(
-        `Dear *{{client_name}}*,\n\nThis is an official communication regarding scheduled maintenance and service charges for your *{{service_type}}*.\n\n📋 *ACCOUNT & SERVICE SUMMARY:*\n▫️ *Client Name:* {{client_name}}\n▫️ *Registered Mobile:* {{client_phone}}\n▫️ *Service Category:* {{service_type}}\n▫️ *Payment Due Date:* {{due_date}}\n▫️ *Outstanding Due:* *₹{{charges_amount}}*\n\n⚠️ *Disclaimer:* If this invoice has already been cleared, please disregard this notice with our sincere appreciation.`
+        `Dear *{{client_name}}*,\n\nThis is an official communication regarding scheduled maintenance and service charges for your *{{service_type}}*.\n\n> *ACCOUNT SUMMARY*\n- *Client:* {{client_name}}\n- *Mobile:* {{client_phone}}\n- *Service:* {{service_type}}\n- *Due Date:* {{due_date}}\n- *Amount Due:* *₹{{charges_amount}}*\n\n_Note: If this invoice has already been cleared, please disregard this notice._`
       );
       setTplFooter("Official Service Desk • Helpdesk: +91 98765 43210");
       setTplMediaType("image");
@@ -524,7 +524,7 @@ export default function ClientsPage() {
         minimumFractionDigits: 2,
       });
       setCustomReminderMessage(
-        `Dear *${client.name}*,\n\nWe hope you are having a productive week. This is an official service update regarding the scheduled maintenance contract for *${client.serviceType}*.\n\n📋 *ACCOUNT & SERVICE SUMMARY:*\n▫️ *Client Name:* ${client.name}\n▫️ *Service Category:* ${client.serviceType}\n▫️ *Payment Due Date:* ${client.dueDate || "On Receipt"}\n▫️ *Total Outstanding:* *₹${amtFormatted}*\n\nKindly arrange for the settlement at your earliest convenience to ensure uninterrupted service operations.\n\n⚠️ *Disclaimer:* If this invoice has already been cleared, please disregard this notice with our sincere appreciation.`
+        `Dear *${client.name}*,\n\nThis is an official service update regarding scheduled maintenance for *${client.serviceType}*.\n\n> *ACCOUNT SUMMARY*\n- *Client:* ${client.name}\n- *Service:* ${client.serviceType}\n- *Due Date:* ${client.dueDate || "On Receipt"}\n- *Total Due:* *₹${amtFormatted}*\n\n_Note: If this invoice has already been settled, please disregard this notice._`
       );
     }
     setSendReminderModalOpen(true);
