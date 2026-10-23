@@ -891,10 +891,6 @@ export default function ClientsPage() {
                                     alt="Template Banner"
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className="absolute top-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1">
-                                    <ImageIcon className="h-2.5 w-2.5 text-emerald-400" />
-                                    Banner Image
-                                  </div>
                                 </div>
                               )}
 
