@@ -112,6 +112,30 @@ export const customerSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
+export const recurringScheduleSchema = z.object({
+  frequency: z.enum(["daily", "weekly", "monthly", "custom_cron"]).default("daily"),
+  timeOfDay: z.string().default("10:00"),
+  timezone: z.string().default("Asia/Kolkata"),
+  daysOfWeek: z.array(z.number()).optional(),
+  dayOfMonth: z.number().optional(),
+  interval: z.number().optional(),
+  cronExpression: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+  endCondition: z.enum(["never", "by_date", "after_occurrences"]).default("never"),
+  endAfterOccurrences: z.number().optional(),
+  sendWithinBusinessHours: z.boolean().default(true),
+});
+
+export const paymentConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  upiId: z.string().optional(),
+  payeeName: z.string().optional(),
+  amount: z.number().optional(),
+  paymentLink: z.string().optional(),
+  qrCodeUrl: z.string().optional(),
+});
+
 export const templateSchema = z.object({
   name: z.string().min(2, "Template name must be at least 2 characters"),
   description: z.string().optional(),
@@ -123,6 +147,10 @@ export const templateSchema = z.object({
   exampleValues: z.record(z.string(), z.string()).optional().default({}),
   mediaType: z.enum(["image", "video", "document", "none"]).default("none"),
   mediaUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  bannerUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  qrCodeUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")),
+  paymentConfig: paymentConfigSchema.optional(),
+  choiceOptions: z.array(z.string()).optional().default([]),
   buttons: z.array(
     z.object({
       id: z.string(),
@@ -157,9 +185,10 @@ export const campaignSchema = z.object({
     utm_content: z.string().optional(),
   }).optional(),
   schedule: z.object({
-    type: z.enum(["immediate", "scheduled"]).default("immediate"),
+    type: z.enum(["immediate", "scheduled", "recurring"]).default("immediate"),
     scheduledAt: z.string().optional(),
     timezone: z.string().default("UTC"),
+    recurring: recurringScheduleSchema.optional(),
   }),
   throttling: z.object({
     batchSize: z.number().min(1).max(500).default(20),

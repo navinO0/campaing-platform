@@ -66,6 +66,10 @@ export async function POST(
       },
       mediaType: body.mediaType || "none",
       mediaUrl: body.mediaUrl || undefined,
+      bannerUrl: body.bannerUrl || undefined,
+      qrCodeUrl: body.qrCodeUrl || undefined,
+      paymentConfig: body.paymentConfig || { enabled: false },
+      choiceOptions: body.choiceOptions || [],
       buttons: body.buttons || [],
     });
 

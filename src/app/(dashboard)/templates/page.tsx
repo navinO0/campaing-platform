@@ -381,6 +381,10 @@ export default function TemplatesPage() {
               footerText={currentTemplate?.footerText}
               mediaType={currentTemplate?.mediaType || mediaType}
               mediaUrl={currentTemplate?.mediaUrl || mediaUrl}
+              bannerUrl={currentTemplate?.bannerUrl}
+              qrCodeUrl={currentTemplate?.qrCodeUrl}
+              paymentConfig={currentTemplate?.paymentConfig}
+              choiceOptions={currentTemplate?.choiceOptions}
               buttons={currentTemplate?.buttons || buttons}
               variables={
                 currentTemplate?.exampleValues || {

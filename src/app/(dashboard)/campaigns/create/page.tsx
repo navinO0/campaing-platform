@@ -7,6 +7,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { WhatsAppPreview } from "@/components/whatsapp/whatsapp-preview";
 import { buildTrackingUrl, extractTemplateVariables } from "@/lib/validation";
 import {
@@ -56,8 +57,13 @@ export default function CreateCampaignWizardPage() {
   });
   const [mediaUrl, setMediaUrl] = useState("");
   const [utmCampaign, setUtmCampaign] = useState("diwali-promo");
-  const [launchType, setLaunchType] = useState<"immediate" | "scheduled" | "draft">("immediate");
+  const [launchType, setLaunchType] = useState<"immediate" | "scheduled" | "recurring" | "draft">("immediate");
   const [scheduledDate, setScheduledDate] = useState("");
+  const [recurrenceFreq, setRecurrenceFreq] = useState<"daily" | "weekly" | "monthly" | "custom_cron">("weekly");
+  const [recurrenceTime, setRecurrenceTime] = useState("10:00");
+  const [recurrenceDays, setRecurrenceDays] = useState<number[]>([1, 4]); // Mon, Thu
+  const [recurrenceTimezone, setRecurrenceTimezone] = useState("Asia/Kolkata");
+  const [businessHoursSafeguard, setBusinessHoursSafeguard] = useState(true);
   const [batchSize, setBatchSize] = useState(20);
   const [delaySeconds, setDelaySeconds] = useState(5);
   const [maxPerMinute, setMaxPerMinute] = useState(60);
@@ -139,9 +145,20 @@ export default function CreateCampaignWizardPage() {
           utm_campaign: utmCampaign || "campaign",
         },
         schedule: {
-          type: launchType === "scheduled" ? "scheduled" : "immediate",
+          type: launchType === "recurring" ? "recurring" : launchType === "scheduled" ? "scheduled" : "immediate",
           scheduledAt: launchType === "scheduled" ? scheduledDate : undefined,
-          timezone: "UTC",
+          timezone: recurrenceTimezone,
+          recurring:
+            launchType === "recurring"
+              ? {
+                  frequency: recurrenceFreq,
+                  timeOfDay: recurrenceTime,
+                  timezone: recurrenceTimezone,
+                  daysOfWeek: recurrenceFreq === "weekly" ? recurrenceDays : undefined,
+                  sendWithinBusinessHours: businessHoursSafeguard,
+                  endCondition: "never",
+                }
+              : undefined,
         },
         throttling: {
           batchSize: Number(batchSize),
@@ -511,36 +528,140 @@ export default function CreateCampaignWizardPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-semibold uppercase text-zinc-500">Launch Mode</label>
-                  <div className="flex gap-2">
+                  <label className="text-xs font-semibold uppercase text-zinc-500">Launch & Schedule Mode</label>
+                  <div className="grid grid-cols-3 gap-2">
                     <Button
                       type="button"
                       variant={launchType === "immediate" ? "default" : "outline"}
                       onClick={() => setLaunchType("immediate")}
-                      className="flex-1"
+                      className="text-xs"
                     >
-                      Send Now
+                      ⚡ Send Now
                     </Button>
                     <Button
                       type="button"
                       variant={launchType === "scheduled" ? "default" : "outline"}
                       onClick={() => setLaunchType("scheduled")}
-                      className="flex-1"
+                      className="text-xs"
                     >
-                      Schedule
+                      📅 One-Time
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={launchType === "recurring" ? "default" : "outline"}
+                      onClick={() => setLaunchType("recurring")}
+                      className="text-xs"
+                    >
+                      🔁 Repeated
                     </Button>
                   </div>
                 </div>
 
                 {launchType === "scheduled" && (
-                  <div>
-                    <label className="text-xs font-semibold uppercase text-zinc-500">Scheduled Date & Time</label>
+                  <div className="space-y-1.5 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                    <label className="text-xs font-semibold uppercase text-zinc-500">Scheduled Date & Time (One-Time)</label>
                     <Input
                       type="datetime-local"
                       value={scheduledDate}
                       onChange={(e) => setScheduledDate(e.target.value)}
-                      className="mt-1.5"
+                      className="mt-1"
                     />
+                  </div>
+                )}
+
+                {launchType === "recurring" && (
+                  <div className="space-y-3 p-3.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase text-zinc-700 dark:text-zinc-300">
+                        Recurring Campaign Automation
+                      </span>
+                      <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 text-[10px]">
+                        Repeated Schedule
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[11px] font-semibold text-zinc-500">Frequency</label>
+                        <select
+                          className="mt-1 w-full rounded-md border border-zinc-200 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs text-zinc-900 dark:text-zinc-100"
+                          value={recurrenceFreq}
+                          onChange={(e) => setRecurrenceFreq(e.target.value as any)}
+                        >
+                          <option value="weekly">Weekly (Specific Days)</option>
+                          <option value="daily">Daily (Every Day)</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-zinc-500">Dispatch Time</label>
+                        <Input
+                          type="time"
+                          value={recurrenceTime}
+                          onChange={(e) => setRecurrenceTime(e.target.value)}
+                          className="text-xs mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    {recurrenceFreq === "weekly" && (
+                      <div>
+                        <label className="text-[11px] font-semibold text-zinc-500 mb-1.5 block">Active Weekdays</label>
+                        <div className="flex flex-wrap gap-1">
+                          {[
+                            { day: 1, label: "Mon" },
+                            { day: 2, label: "Tue" },
+                            { day: 3, label: "Wed" },
+                            { day: 4, label: "Thu" },
+                            { day: 5, label: "Fri" },
+                            { day: 6, label: "Sat" },
+                            { day: 0, label: "Sun" },
+                          ].map((w) => {
+                            const isSel = recurrenceDays.includes(w.day);
+                            return (
+                              <button
+                                key={w.day}
+                                type="button"
+                                onClick={() => {
+                                  if (isSel) {
+                                    if (recurrenceDays.length > 1) {
+                                      setRecurrenceDays(recurrenceDays.filter((d) => d !== w.day));
+                                    }
+                                  } else {
+                                    setRecurrenceDays([...recurrenceDays, w.day]);
+                                  }
+                                }}
+                                className={`h-7 px-2.5 rounded text-xs font-medium border transition-colors ${
+                                  isSel
+                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
+                                }`}
+                              >
+                                {w.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between p-2 rounded-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700">
+                      <div className="text-xs">
+                        <div className="font-semibold text-zinc-800 dark:text-zinc-200">
+                          Meta Business Hours Safeguard
+                        </div>
+                        <div className="text-[10px] text-zinc-400">
+                          Restricts blasts to 09:00 AM – 08:00 PM to maximize delivery.
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={businessHoursSafeguard}
+                        onChange={(e) => setBusinessHoursSafeguard(e.target.checked)}
+                        className="h-4 w-4 text-emerald-600 rounded border-zinc-300 focus:ring-emerald-500"
+                      />
+                    </div>
                   </div>
                 )}
               </CardContent>

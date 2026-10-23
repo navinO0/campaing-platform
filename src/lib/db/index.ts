@@ -110,6 +110,10 @@ function mapTemplate(row: any): Template {
     exampleValues: typeof row.example_values === "object" && row.example_values !== null ? row.example_values : {},
     mediaType: row.media_type || "none",
     mediaUrl: row.media_url || undefined,
+    bannerUrl: row.banner_url || undefined,
+    qrCodeUrl: row.qr_code_url || undefined,
+    paymentConfig: typeof row.payment_config === "object" && row.payment_config !== null ? row.payment_config : { enabled: false },
+    choiceOptions: Array.isArray(row.choice_options) ? row.choice_options : [],
     buttons: Array.isArray(row.buttons) ? row.buttons : [],
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -887,6 +891,7 @@ function mapClient(row: any): Client {
     dueDate: row.due_date ? new Date(row.due_date).toISOString().split("T")[0] : null,
     notes: row.notes || undefined,
     status: row.status || "active",
+    reminderSchedule: typeof row.reminder_schedule === "object" && row.reminder_schedule !== null ? row.reminder_schedule : { type: "immediate" },
     customTemplates: [],
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
@@ -906,6 +911,10 @@ function mapClientTemplate(row: any): ClientTemplate {
     variables: typeof row.variables === "object" && row.variables !== null ? row.variables : {},
     mediaType: row.media_type || "none",
     mediaUrl: row.media_url || undefined,
+    bannerUrl: row.banner_url || undefined,
+    qrCodeUrl: row.qr_code_url || undefined,
+    paymentConfig: typeof row.payment_config === "object" && row.payment_config !== null ? row.payment_config : { enabled: false },
+    choiceOptions: Array.isArray(row.choice_options) ? row.choice_options : [],
     buttons: Array.isArray(row.buttons) ? row.buttons : [],
     lastSentAt: row.last_sent_at ? new Date(row.last_sent_at).toISOString() : null,
     sentCount: Number(row.sent_count) || 0,
@@ -923,6 +932,10 @@ function mapClientReminder(row: any): ClientReminder {
     clientName: row.client_name,
     renderedMessage: row.rendered_message,
     status: row.status || "sent",
+    scheduleType: row.schedule_type || "immediate",
+    scheduledAt: row.scheduled_at ? new Date(row.scheduled_at).toISOString() : null,
+    recurringRule: typeof row.recurring_rule === "object" && row.recurring_rule !== null ? row.recurring_rule : null,
+    nextRunAt: row.next_run_at ? new Date(row.next_run_at).toISOString() : null,
     evolutionMessageId: row.evolution_message_id || null,
     errorMessage: row.error_message || null,
     createdAt: new Date(row.created_at).toISOString(),
@@ -1017,8 +1030,9 @@ export async function updateClientInDb(id: string, updates: Partial<Client>): Pr
       due_date = $6,
       notes = $7,
       status = $8,
+      reminder_schedule = COALESCE($9, reminder_schedule),
       updated_at = NOW()
-    WHERE id = $9
+    WHERE id = $10
     RETURNING *;
   `;
   const values = [
@@ -1030,6 +1044,7 @@ export async function updateClientInDb(id: string, updates: Partial<Client>): Pr
     updates.dueDate ?? existing.dueDate ?? null,
     updates.notes ?? existing.notes ?? null,
     updates.status ?? existing.status,
+    updates.reminderSchedule ? JSON.stringify(updates.reminderSchedule) : null,
     id,
   ];
   const res = await pool.query(query, values);
@@ -1047,8 +1062,9 @@ export async function createClientTemplateInDb(template: Partial<ClientTemplate>
     INSERT INTO whatsapp_campaign.client_templates (
       id, client_id, client_phone, title, category,
       header_text, body_text, footer_text, variables,
-      media_type, media_url, buttons, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      media_type, media_url, banner_url, qr_code_url,
+      payment_config, choice_options, buttons, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
     ON CONFLICT (id) DO UPDATE SET
       title = EXCLUDED.title,
       category = EXCLUDED.category,
@@ -1058,6 +1074,10 @@ export async function createClientTemplateInDb(template: Partial<ClientTemplate>
       variables = EXCLUDED.variables,
       media_type = EXCLUDED.media_type,
       media_url = EXCLUDED.media_url,
+      banner_url = EXCLUDED.banner_url,
+      qr_code_url = EXCLUDED.qr_code_url,
+      payment_config = EXCLUDED.payment_config,
+      choice_options = EXCLUDED.choice_options,
       buttons = EXCLUDED.buttons,
       updated_at = NOW()
     RETURNING *;
@@ -1074,6 +1094,10 @@ export async function createClientTemplateInDb(template: Partial<ClientTemplate>
     JSON.stringify(template.variables || {}),
     template.mediaType || "none",
     template.mediaUrl || null,
+    template.bannerUrl || null,
+    template.qrCodeUrl || null,
+    JSON.stringify(template.paymentConfig || { enabled: false }),
+    JSON.stringify(template.choiceOptions || []),
     JSON.stringify(template.buttons || []),
   ];
   const res = await pool.query(query, values);
@@ -1090,9 +1114,13 @@ export async function updateClientTemplateInDb(id: string, updates: Partial<Clie
       variables = COALESCE($5, variables),
       media_type = COALESCE($6, media_type),
       media_url = $7,
-      buttons = COALESCE($8, buttons),
+      banner_url = $8,
+      qr_code_url = $9,
+      payment_config = COALESCE($10, payment_config),
+      choice_options = COALESCE($11, choice_options),
+      buttons = COALESCE($12, buttons),
       updated_at = NOW()
-    WHERE id = $9
+    WHERE id = $13
     RETURNING *;
   `;
   const values = [
@@ -1103,6 +1131,10 @@ export async function updateClientTemplateInDb(id: string, updates: Partial<Clie
     updates.variables ? JSON.stringify(updates.variables) : null,
     updates.mediaType,
     updates.mediaUrl || null,
+    updates.bannerUrl || null,
+    updates.qrCodeUrl || null,
+    updates.paymentConfig ? JSON.stringify(updates.paymentConfig) : null,
+    updates.choiceOptions ? JSON.stringify(updates.choiceOptions) : null,
     updates.buttons ? JSON.stringify(updates.buttons) : null,
     id,
   ];
@@ -1123,13 +1155,18 @@ export async function recordClientReminderInDb(reminder: {
   clientName: string;
   renderedMessage: string;
   status: string;
+  scheduleType?: string;
+  scheduledAt?: string | null;
+  recurringRule?: any | null;
+  nextRunAt?: string | null;
   evolutionMessageId?: string | null;
   errorMessage?: string | null;
 }): Promise<ClientReminder> {
   const query = `
     INSERT INTO whatsapp_campaign.client_reminders (
-      client_id, client_template_id, phone, client_name, rendered_message, status, evolution_message_id, error_message, created_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      client_id, client_template_id, phone, client_name, rendered_message, status,
+      schedule_type, scheduled_at, recurring_rule, next_run_at, evolution_message_id, error_message, created_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
     RETURNING *;
   `;
   const values = [
@@ -1139,12 +1176,16 @@ export async function recordClientReminderInDb(reminder: {
     reminder.clientName,
     reminder.renderedMessage,
     reminder.status,
+    reminder.scheduleType || "immediate",
+    reminder.scheduledAt ? new Date(reminder.scheduledAt) : null,
+    reminder.recurringRule ? JSON.stringify(reminder.recurringRule) : null,
+    reminder.nextRunAt ? new Date(reminder.nextRunAt) : null,
     reminder.evolutionMessageId || null,
     reminder.errorMessage || null,
   ];
   const res = await pool.query(query, values);
 
-  if (reminder.clientTemplateId) {
+  if (reminder.clientTemplateId && reminder.status === "sent") {
     await pool.query(
       `UPDATE whatsapp_campaign.client_templates
        SET sent_count = sent_count + 1, last_sent_at = NOW(), updated_at = NOW()

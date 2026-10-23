@@ -30,6 +30,15 @@ export interface TemplateComponent {
   buttons?: TemplateButton[];
 }
 
+export interface PaymentConfig {
+  enabled: boolean;
+  upiId?: string;
+  payeeName?: string;
+  amount?: number;
+  paymentLink?: string;
+  qrCodeUrl?: string;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -44,6 +53,10 @@ export interface Template {
   exampleValues?: Record<string, string>;
   mediaType: MediaType;
   mediaUrl?: string;
+  bannerUrl?: string;
+  qrCodeUrl?: string;
+  paymentConfig?: PaymentConfig;
+  choiceOptions?: string[];
   buttons?: TemplateButton[];
   components?: TemplateComponent[];
   createdAt: string;
@@ -107,10 +120,30 @@ export interface CampaignTracking {
   utm_term?: string;
 }
 
+export type ScheduleType = "immediate" | "scheduled" | "recurring";
+export type RecurrenceFrequency = "daily" | "weekly" | "monthly" | "custom_cron";
+
+export interface RecurringScheduleConfig {
+  frequency: RecurrenceFrequency;
+  timeOfDay: string; // e.g. "10:00"
+  timezone?: string; // e.g. "Asia/Kolkata"
+  daysOfWeek?: number[]; // [1, 3, 5] for Mon, Wed, Fri (0 = Sun, 6 = Sat or 1-7)
+  dayOfMonth?: number; // 1-31
+  interval?: number; // e.g. every 2 weeks or 3 days
+  cronExpression?: string; // e.g. "0 10 * * 1-5"
+  startDate?: string;
+  endDate?: string;
+  endCondition: "never" | "by_date" | "after_occurrences";
+  endAfterOccurrences?: number;
+  occurrencesRun?: number;
+  sendWithinBusinessHours?: boolean; // Meta 09:00 - 20:00 safeguard
+}
+
 export interface CampaignSchedule {
-  type: "immediate" | "scheduled";
+  type: ScheduleType;
   scheduledAt?: string;
   timezone?: string;
+  recurring?: RecurringScheduleConfig;
 }
 
 export interface CampaignThrottling {
@@ -204,6 +237,7 @@ export interface Client {
   dueDate?: string | null;
   notes?: string;
   status: "active" | "pending_payment" | "overdue" | "inactive";
+  reminderSchedule?: CampaignSchedule;
   customTemplates?: ClientTemplate[];
   createdAt: string;
   updatedAt: string;
@@ -221,6 +255,10 @@ export interface ClientTemplate {
   variables: Record<string, string>;
   mediaType: MediaType;
   mediaUrl?: string;
+  bannerUrl?: string;
+  qrCodeUrl?: string;
+  paymentConfig?: PaymentConfig;
+  choiceOptions?: string[];
   buttons: TemplateButton[];
   lastSentAt?: string | null;
   sentCount: number;
@@ -235,7 +273,11 @@ export interface ClientReminder {
   phone: string;
   clientName: string;
   renderedMessage: string;
-  status: "sent" | "failed" | "pending";
+  status: "sent" | "failed" | "pending" | "scheduled";
+  scheduleType?: ScheduleType;
+  scheduledAt?: string | null;
+  recurringRule?: RecurringScheduleConfig | null;
+  nextRunAt?: string | null;
   evolutionMessageId?: string | null;
   errorMessage?: string | null;
   createdAt: string;

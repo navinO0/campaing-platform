@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { recordClientReminderInDb, getClientByIdFromDb } from "@/lib/db";
+import { recordClientReminderInDb, getClientByIdFromDb, updateClientInDb } from "@/lib/db";
 import { env } from "@/config/env";
 import { forwardToN8n } from "@/lib/api/n8n-client";
 
@@ -15,6 +15,14 @@ export async function POST(request: Request) {
       headerText,
       footerText,
       mediaUrl,
+      bannerUrl,
+      qrCodeUrl,
+      paymentConfig,
+      choiceOptions,
+      buttons,
+      scheduleType = "immediate",
+      scheduledAt,
+      recurringRule,
     } = body;
 
     if (!clientId || !phone || !message) {
@@ -36,6 +44,46 @@ export async function POST(request: Request) {
     // Clean phone number for WhatsApp (remove + and spaces)
     const cleanPhone = phone.replace(/[^0-9]/g, "");
 
+    // Effective media URL (banner image prioritized, then QR code, then mediaUrl)
+    const effectiveMediaUrl = bannerUrl || mediaUrl || (paymentConfig?.enabled ? qrCodeUrl : undefined);
+
+    // If recurring or scheduled in the future:
+    if (scheduleType === "scheduled" || scheduleType === "recurring") {
+      const nextRun = scheduledAt ? new Date(scheduledAt).toISOString() : new Date(Date.now() + 86400000).toISOString();
+
+      // Save schedule on client record
+      await updateClientInDb(clientId, {
+        reminderSchedule: {
+          type: scheduleType,
+          scheduledAt: scheduledAt || undefined,
+          recurring: recurringRule || undefined,
+        },
+      });
+
+      // Record scheduled reminder entry
+      const reminderRecord = await recordClientReminderInDb({
+        clientId,
+        clientTemplateId,
+        phone,
+        clientName: clientName || "Valued Client",
+        renderedMessage: fullText,
+        status: "scheduled",
+        scheduleType,
+        scheduledAt: scheduledAt || null,
+        recurringRule: recurringRule || null,
+        nextRunAt: nextRun,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: scheduleType === "recurring"
+          ? `Recurring reminder schedule activated for ${phone}`
+          : `Reminder scheduled for ${phone} on ${new Date(scheduledAt).toLocaleString()}`,
+        data: reminderRecord,
+      });
+    }
+
+    // Otherwise: Immediate Dispatch
     let evolutionMessageId: string | null = null;
     let dispatchStatus = "sent";
     let dispatchError: string | null = null;
@@ -50,17 +98,17 @@ export async function POST(request: Request) {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
 
-        const evoEndpoint = mediaUrl
+        const evoEndpoint = effectiveMediaUrl
           ? `${evoUrl}/message/sendMedia/${encodeURIComponent(evoInstance)}`
           : `${evoUrl}/message/sendText/${encodeURIComponent(evoInstance)}`;
 
-        const evoPayload = mediaUrl
+        const evoPayload = effectiveMediaUrl
           ? {
               number: cleanPhone,
               mediaMessage: {
                 mediatype: "image",
                 caption: fullText,
-                media: mediaUrl,
+                media: effectiveMediaUrl,
               },
             }
           : {
@@ -105,6 +153,11 @@ export async function POST(request: Request) {
           phone: cleanPhone,
           message: fullText,
           templateId: clientTemplateId,
+          bannerUrl,
+          qrCodeUrl,
+          paymentConfig,
+          choiceOptions,
+          buttons,
         },
       }).catch(() => null);
     }
@@ -117,6 +170,7 @@ export async function POST(request: Request) {
       clientName: clientName || "Valued Client",
       renderedMessage: fullText,
       status: evolutionMessageId ? "sent" : (dispatchError ? "queued" : "sent"),
+      scheduleType: "immediate",
       evolutionMessageId,
       errorMessage: dispatchError,
     });
@@ -133,4 +187,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

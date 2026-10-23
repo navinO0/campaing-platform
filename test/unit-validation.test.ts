@@ -4,6 +4,7 @@ import {
   extractTemplateVariables,
   buildTrackingUrl,
   templateSchema,
+  campaignSchema,
 } from "@/lib/validation";
 import {
   maskPhoneNumber,
@@ -131,5 +132,69 @@ describe("Validation and Utility Unit Tests", () => {
     expect(verifyWebhookSignature(payload, signature, secret)).toBe(true);
     expect(verifyWebhookSignature(payload, `sha256=${signature}`, secret)).toBe(true);
     expect(verifyWebhookSignature(payload, "invalid_sig_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", secret)).toBe(false);
+  });
+
+  it("validates templates with banner images, payment QR configs, and choice options", () => {
+    const parsed = templateSchema.safeParse({
+      name: "ac_service_maintenance_banner_qr",
+      category: "UTILITY",
+      bodyText: "Dear {{client_name}}, your maintenance fee is due. Pay online or reply below.",
+      bannerUrl: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e",
+      qrCodeUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi%3A%2F%2Fpay",
+      paymentConfig: {
+        enabled: true,
+        upiId: "sharma@okhdfcbank",
+        payeeName: "Sharma Enterprises",
+        amount: 1499,
+        paymentLink: "https://pay.example.com/inv/8912",
+      },
+      choiceOptions: ["✅ Paid Already", "💳 Pay Online Now", "📞 Request Callback"],
+      buttons: [
+        {
+          id: "btn_pay",
+          type: "visit_website",
+          text: "💳 Pay ₹1,499 Now",
+          url: "https://pay.example.com/inv/8912",
+        },
+      ],
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.bannerUrl).toContain("unsplash.com");
+      expect(parsed.data.choiceOptions).toHaveLength(3);
+      expect(parsed.data.paymentConfig?.enabled).toBe(true);
+      expect(parsed.data.paymentConfig?.amount).toBe(1499);
+    }
+  });
+
+  it("validates campaigns with repeated / recurring schedules", () => {
+    const parsed = campaignSchema.safeParse({
+      name: "Weekly Service Reminder Blast",
+      templateId: "tpl_service_maintenance_charges_01",
+      audience: {
+        type: "all_opted_in",
+      },
+      schedule: {
+        type: "recurring",
+        timezone: "Asia/Kolkata",
+        recurring: {
+          frequency: "weekly",
+          timeOfDay: "10:00",
+          timezone: "Asia/Kolkata",
+          daysOfWeek: [1, 4], // Monday and Thursday
+          sendWithinBusinessHours: true,
+          endCondition: "never",
+        },
+      },
+    });
+
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.schedule.type).toBe("recurring");
+      expect(parsed.data.schedule.recurring?.frequency).toBe("weekly");
+      expect(parsed.data.schedule.recurring?.daysOfWeek).toEqual([1, 4]);
+      expect(parsed.data.schedule.recurring?.sendWithinBusinessHours).toBe(true);
+    }
   });
 });

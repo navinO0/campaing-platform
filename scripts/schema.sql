@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_campaign.templates (
   example_values JSONB DEFAULT '{}'::jsonb,
   media_type VARCHAR(32) DEFAULT 'none',
   media_url TEXT,
+  banner_url TEXT,
+  qr_code_url TEXT,
+  payment_config JSONB DEFAULT '{"enabled": false}'::jsonb,
+  choice_options JSONB DEFAULT '[]'::jsonb,
   buttons JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -468,6 +472,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_campaign.clients (
   due_date DATE,
   notes TEXT,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
+  reminder_schedule JSONB DEFAULT '{"type":"immediate"}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -484,6 +489,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_campaign.client_templates (
   variables JSONB NOT NULL DEFAULT '{}'::jsonb,
   media_type VARCHAR(32) NOT NULL DEFAULT 'none',
   media_url TEXT,
+  banner_url TEXT,
+  qr_code_url TEXT,
+  payment_config JSONB DEFAULT '{"enabled": false}'::jsonb,
+  choice_options JSONB DEFAULT '[]'::jsonb,
   buttons JSONB NOT NULL DEFAULT '[]'::jsonb,
   last_sent_at TIMESTAMPTZ,
   sent_count INT NOT NULL DEFAULT 0,
@@ -499,6 +508,10 @@ CREATE TABLE IF NOT EXISTS whatsapp_campaign.client_reminders (
   client_name VARCHAR(255) NOT NULL,
   rendered_message TEXT NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'sent',
+  schedule_type VARCHAR(32) NOT NULL DEFAULT 'immediate',
+  scheduled_at TIMESTAMPTZ,
+  recurring_rule JSONB,
+  next_run_at TIMESTAMPTZ,
   evolution_message_id VARCHAR(128),
   error_message TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -508,6 +521,7 @@ CREATE INDEX IF NOT EXISTS idx_client_templates_client_id ON whatsapp_campaign.c
 CREATE INDEX IF NOT EXISTS idx_client_templates_phone ON whatsapp_campaign.client_templates(client_phone);
 CREATE INDEX IF NOT EXISTS idx_client_reminders_client ON whatsapp_campaign.client_reminders(client_id);
 CREATE INDEX IF NOT EXISTS idx_client_reminders_created ON whatsapp_campaign.client_reminders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_client_reminders_next_run ON whatsapp_campaign.client_reminders(next_run_at) WHERE next_run_at IS NOT NULL;
 
 -- Seed initial Clients
 INSERT INTO whatsapp_campaign.clients (id, name, phone, company, service_type, charges_amount, due_date, notes, status)
